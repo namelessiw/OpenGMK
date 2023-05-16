@@ -31,6 +31,10 @@ impl Openable<Self> for ConsoleWindow {
     }
 }
 impl Window for ConsoleWindow {
+    fn stored_kind(&self) -> Option<super::WindowKind> {
+        Some(super::WindowKind::Console(self.id))
+    }
+
     fn window_id(&self) -> usize {
         self.id
     }
@@ -45,6 +49,7 @@ impl Window for ConsoleWindow {
             frame,
             game,
             keybindings,
+            clean_state,
             ..
         } = info;
 
@@ -129,6 +134,8 @@ impl Window for ConsoleWindow {
                                     self.output.push(format!("Error: {}\n", error));
                                 },
                             }
+
+                            **clean_state = false;
                         }
                     },
                     Err(error) => {

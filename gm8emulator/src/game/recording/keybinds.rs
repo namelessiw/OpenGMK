@@ -152,7 +152,7 @@ impl Keybindings {
         self.bindings.insert(bind, keys);
     }
 
-    /// Update the bindings diabled state to ensure that bindings will be disabled until the next io update.
+    /// Update the bindings disabled state to ensure that bindings will be disabled until the next io update.
     pub fn update_disable_bindings(&mut self) {
         if !self.disable_bindings {
             self.bindings_disabled = false;
@@ -209,6 +209,10 @@ impl Openable<Self> for KeybindWindow {
     }
 }
 impl Window for KeybindWindow {
+    fn stored_kind(&self) -> Option<super::WindowKind> {
+        Some(super::WindowKind::Keybindings)
+    }
+
     fn name(&self) -> String {
         "Keybindings".to_owned()
     }

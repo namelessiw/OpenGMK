@@ -31,8 +31,20 @@ impl Window for ControlWindow {
 
         self.update_texts(info);
 
+        let run_until_frame = if let Some(frame) = *info.run_until_frame {
+            if frame > info.config.current_frame {
+                true
+            } else {
+                *info.run_until_frame = None;
+                false
+            }
+        } else {
+            false
+        };
+
         if (info.frame.button("Advance", imgui::Vec2(165.0, 20.0), None)
-            || info.keybind_pressed(Binding::Advance))
+            || info.keybind_pressed(Binding::Advance)
+            || run_until_frame)
             && *info.game_running
             && info.err_string.is_none()
         {
@@ -121,6 +133,16 @@ impl Window for ControlWindow {
             || info.keybind_pressed(Binding::ToggleReadOnly)
         {
             info.config.is_read_only = !info.config.is_read_only;
+            info.config.save();
+        }
+
+        let mouse_set_label = match info.config.set_mouse_using_textbox {
+            true => "Set Mouse: textbox###mouse_set_label",
+            false => "Set mouse: clicking###mouse_set_label",
+        };
+        if info.frame.button(mouse_set_label, imgui::Vec2(165.0, 20.0), None) 
+        {
+            info.config.set_mouse_using_textbox = !info.config.set_mouse_using_textbox;
             info.config.save();
         }
 
@@ -294,7 +316,7 @@ impl ControlWindow {
             info.config.ui_width.into(),
             info.config.ui_height.into()
         );
-        info.game.renderer.clear_view(crate::game::recording::CLEAR_COLOUR, 1.0);
+        info.game.renderer.clear_view(if *info.clean_state { crate::game::recording::CLEAR_COLOUR_GOOD } else { crate::game::recording::CLEAR_COLOUR_BAD }, 1.0);
         *info.renderer_state = info.game.renderer.state();
         info.game.renderer.set_state(info.ui_renderer_state);
         info.clear_context_menu();

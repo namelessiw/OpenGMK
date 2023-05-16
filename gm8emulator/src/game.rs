@@ -2209,6 +2209,7 @@ impl Game {
             self.renderer.upload_sprite(Box::new([0, 0, 0, 0]), 1, 1, 0, 0).expect("Failed to upload blank sprite");
         }
 
+        let mut clean_state = true;
         if start_save_path.is_some() {
             let mut save_buffer = savestate::Buffer::new();
             match SaveState::from_file(start_save_path.unwrap(), &mut save_buffer) {
@@ -2219,6 +2220,7 @@ impl Game {
                     }
 
                     frame_count = rep.frame_count();
+                    clean_state = state.clean_state;
                     self.renderer.set_state(&ren);
                 },
                 Err(e) => {
@@ -2240,10 +2242,14 @@ impl Game {
             
             if self.frame_limit_at > 0 && frame_count == self.frame_limit_at || frame_count == replay.frame_count() {
                 if let Some(bin) = &output_bin {
+                    if start_save_path.is_some() {
+                        // Store the current framebuffer since it's used by the savestate. Only matters if there already is a framebuffer stored which is the case when loading a savestate.
+                        self.renderer.resize_framebuffer(self.renderer.stored_size().0, self.renderer.stored_size().1, true);
+                    }
                     let render_state = self.renderer.state();
                     let mut new_replay = replay.clone();
                     new_replay.truncate_frames(frame_count);
-                    match SaveState::from(&mut self, new_replay, render_state)
+                    match SaveState::from(&mut self, new_replay, render_state, clean_state)
                         .save_to_file(bin, &mut savestate::Buffer::new())
                     {
                         Ok(()) => break Ok(()),
