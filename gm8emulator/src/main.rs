@@ -50,6 +50,7 @@ fn xmain() -> i32 {
     opts.optflag("t", "singlethread", "parse gamedata synchronously");
     opts.optflag("v", "verbose", "enables verbose logging");
     opts.optflag("r", "realtime", "disables clock spoofing");
+    opts.optflag("d", "dump-video", "dump video encode on replay");
     opts.optflagopt("l", "no-framelimit-until", "disables the frame-limiter until specified frame", "FRAME");
     opts.optopt("n", "project-name", "name of TAS project to create or load", "NAME");
     opts.optopt("f", "replay-file", "path to savestate file to replay", "FILE");
@@ -80,6 +81,7 @@ fn xmain() -> i32 {
     let strict = matches.opt_present("s");
     let multithread = !matches.opt_present("t");
     let spoof_time = !matches.opt_present("r");
+    let dump_video = matches.opt_present("d");
     let frame_limit_at = matches.opt_str("l").map(|frame| {
         match frame.parse::<usize>() 
         {
@@ -258,7 +260,7 @@ fn xmain() -> i32 {
             .map(|i| PathBuf::from(components.decode_str(i.name.as_ref()).into_owned()))
             .collect::<Vec<_>>();
         let result = if let Some(replay) = replay {
-            components.replay(replay, output_bin, start_save_path.as_ref())
+            components.replay(replay, output_bin, start_save_path.as_ref(), dump_video)
         } else {
             components.spoofed_time_nanos = if spoof_time { Some(time_now) } else { None };
             components.run()
