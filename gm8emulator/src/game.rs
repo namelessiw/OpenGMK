@@ -1331,7 +1331,7 @@ impl Game {
                 .arg("-i")
                 .arg("-")
                 .arg("-c:v")
-                .arg("libx264")
+                .arg("libx264rgb")
                 .arg("-preset")
                 .arg("veryslow")
                 .arg("-qp")
@@ -2010,13 +2010,6 @@ impl Game {
         // Tell renderer to finish the frame
         if self.auto_draw && self.scene_change.is_none() && self.play_type != PlayType::Record {
             self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
-            let w: i32 = self.window_inner_size.0.try_into().unwrap();
-            let h: i32 = self.window_inner_size.1.try_into().unwrap();
-            let pixels = self.renderer.get_pixels(0, 0, w, h);
-            assert!(h == 608);
-            assert!(w == 800);
-            let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
-            stdin.write_all(&pixels).unwrap();
         }
 
         // Clear inputs for this frame
@@ -2253,6 +2246,7 @@ impl Game {
         let mut frame_count: usize = 0;
         self.rand.set_seed(replay.start_seed);
         self.spoofed_time_nanos = Some(replay.start_time);
+        let mut current_frame_time: u32 = 0;
 
         // the tas ui creates some sprites, so as a hotfix we need to generate them here too
         // TODO don't
@@ -2330,6 +2324,21 @@ impl Game {
             }
 
             self.frame()?;
+            while current_frame_time < 50 {
+                if self.auto_draw && self.scene_change.is_none() && self.play_type != PlayType::Record {
+                    self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
+                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                    let pixels = self.renderer.get_pixels(0, 0, w, h);
+                    assert!(h == 608);
+                    assert!(w == 800);
+                    let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+                    stdin.write_all(&pixels).unwrap();
+                }
+                current_frame_time += self.room.speed;
+            }
+            current_frame_time -= 50;
+
             match self.scene_change {
                 Some(SceneChange::Room(id)) => self.load_room(id)?,
                 Some(SceneChange::Restart) => self.restart()?,
