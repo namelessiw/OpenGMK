@@ -65,6 +65,7 @@ use std::{
     fs::File,
     io::Write,
     path::PathBuf,
+    process::{Child, Command, Stdio},
     rc::Rc,
     time::{Duration, Instant},
 };
@@ -169,7 +170,7 @@ pub struct Game {
 
     pub play_type: PlayType,
     pub stored_events: VecDeque<replay::Event>,
-    pub frame_limiter: bool, // whether to limit FPS of gameplay by room_speed
+    pub frame_limiter: bool,   // whether to limit FPS of gameplay by room_speed
     pub frame_limit_at: usize, // on which frame to start limiting FPS
 
     pub audio: audio::AudioManager,
@@ -192,6 +193,7 @@ pub struct Game {
     pub unscaled_width: u32,
     // Height the window is supposed to have, assuming it hasn't been resized by the user
     pub unscaled_height: u32,
+    pub ffmpeg_dumper: Child,
 }
 
 /// Enum indicating which GameMaker version a game was built with
@@ -556,8 +558,9 @@ impl Game {
             let glx = crate::render::opengl::glx::GLX.as_ref().unwrap();
             visual = glx.visual;
         }
-        
-        let mut builder = connection.builder()
+
+        let mut builder = connection
+            .builder()
             .class_name("OpenGMK")
             .visible(false)
             .size((width as _, height as _))
@@ -1003,15 +1006,18 @@ impl Game {
                         for ((i, map), input) in events.iter_mut().enumerate().zip(b.events.iter()) {
                             map.reserve(input.len());
                             for (sub, actions) in input {
-                                map.insert(*sub, match Tree::from_list(actions, &mut compiler) {
-                                    Ok(t) => Rc::new(RefCell::new(t)),
-                                    Err(e) => {
-                                        return Err(format!(
-                                            "Compiler error in object {} event {},{}: {}",
-                                            b.name, i, sub, e
-                                        ))
+                                map.insert(
+                                    *sub,
+                                    match Tree::from_list(actions, &mut compiler) {
+                                        Ok(t) => Rc::new(RefCell::new(t)),
+                                        Err(e) => {
+                                            return Err(format!(
+                                                "Compiler error in object {} event {},{}: {}",
+                                                b.name, i, sub, e
+                                            ))
+                                        },
                                     },
-                                });
+                                );
                             }
                         }
                         Ok(Box::new(Object {
@@ -1051,7 +1057,7 @@ impl Game {
                             "Invalid parent tree for object {}: non-existent object: {}",
                             i, parent_index
                         )
-                        .into())
+                        .into());
                     }
                 }
             }
@@ -1311,6 +1317,31 @@ impl Game {
             window_offset_spoof: (0, 0),
             window_sizeable: settings.allow_resize,
             window_visible: true,
+            ffmpeg_dumper: Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-f")
+                .arg("rawvideo")
+                .arg("-pixel_format")
+                .arg("rgba")
+                .arg("-video_size")
+                .arg("800x608")
+                .arg("-framerate")
+                .arg("50")
+                .arg("-an")
+                .arg("-i")
+                .arg("-")
+                .arg("-c:v")
+                .arg("libx264rgb")
+                .arg("-preset")
+                .arg("veryslow")
+                .arg("-qp")
+                .arg("0")
+                .arg("dump.avi")
+                .stdin(Stdio::piped())
+                .stderr(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to open stdin"),
         };
 
         game.temp_directory = game.encode_str_maybe(temp_directory.to_str().unwrap()).unwrap().into_owned().into();
@@ -1462,7 +1493,11 @@ impl Game {
         match self.gm_version {
             Version::GameMaker8_0 => {
                 let (encoded, _, is_bad) = self.encoding.encode(utf8);
-                if is_bad { None } else { Some(encoded) }
+                if is_bad {
+                    None
+                } else {
+                    Some(encoded)
+                }
             },
             Version::GameMaker8_1 => Some(Cow::from(utf8.as_bytes())),
         }
@@ -1494,7 +1529,7 @@ impl Game {
                 )
             }
         } else {
-            return Err(gml::Error::NonexistentAsset(asset::Type::Room, room_id).into())
+            return Err(gml::Error::NonexistentAsset(asset::Type::Room, room_id).into());
         };
 
         // Update this early so the other events run
@@ -1557,7 +1592,7 @@ impl Game {
                     .map(yh)
                     .unwrap_or(room_state.height as i32);
                 if x_max < 0 || y_max < 0 {
-                    return Err(format!("Bad room width/height {},{} loading room {}", x_max, y_max, room_id).into())
+                    return Err(format!("Bad room width/height {},{} loading room {}", x_max, y_max, room_id).into());
                 }
                 (x_max, y_max)
             }
@@ -1768,7 +1803,7 @@ impl Game {
             return Err(Box::new(gml::Error::FunctionError(
                 "game_load".into(),
                 "tried to load wrong version of save file".into(),
-            )))
+            )));
         }
         let save: GMSave = bincode::deserialize_from(file)
             .map_err(|e| gml::Error::FunctionError("game_load".into(), format!("{}", e)))?;
@@ -1781,7 +1816,7 @@ impl Game {
     pub fn frame(&mut self) -> gml::Result<()> {
         if self.esc_close_game && self.input.keyboard_lastkey() == input::Button::Escape as u8 {
             self.scene_change = Some(SceneChange::End);
-            return Ok(())
+            return Ok(());
         }
 
         // Update xprevious and yprevious for all instances
@@ -1795,13 +1830,13 @@ impl Game {
         // Begin step trigger events
         self.run_triggers(trigger::TriggerTime::BeginStep)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Begin step event
         self.run_object_event(ev::STEP, 1, None)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Advance timelines for all instances
@@ -1858,49 +1893,49 @@ impl Game {
         }
 
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Alarm events
         self.run_alarms()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Key events
         self.run_keyboard_events()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Key press events
         self.run_key_press_events()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Key release events
         self.run_key_release_events()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // All mouse events
         self.run_mouse_events()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Step trigger events
         self.run_triggers(trigger::TriggerTime::Step)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Step event
         self.run_object_event(ev::STEP, 0, None)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Movement: apply friction, gravity, and hspeed/vspeed
@@ -1916,25 +1951,25 @@ impl Game {
         // Outside room, intersect boundary, outside/intersect view
         self.run_bound_events()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // Run collision events
         self.run_collisions()?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // End step trigger events
         self.run_triggers(trigger::TriggerTime::EndStep)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         // End step event
         self.run_object_event(ev::STEP, 2, None)?;
         if self.scene_change.is_some() {
-            return Ok(())
+            return Ok(());
         }
 
         self.particles.auto_update_systems(&mut self.rand);
@@ -2015,7 +2050,7 @@ impl Game {
         use external::dll;
         if let Some(external) = self.externals.get_external(id) {
             if args.len() != external.signature.type_args.len() {
-                return Ok(Default::default()) // unfortunately required
+                return Ok(Default::default()); // unfortunately required
             }
             let convert_args = || {
                 args.iter()
@@ -2140,7 +2175,7 @@ impl Game {
 
             // Exit if the window was closed by the user, such as by pressing 'X'
             if self.close_requested {
-                break Ok(self.run_game_end_events()?)
+                break Ok(self.run_game_end_events()?);
             }
 
             // frame limiter
@@ -2176,7 +2211,11 @@ impl Game {
         if let Some(seed) = &frame.new_seed {
             match seed {
                 FrameRng::Override(new_seed) => self.rand.set_seed(*new_seed),
-                FrameRng::Increment(count) => for _ in 0..*count { self.rand.cycle(); },
+                FrameRng::Increment(count) => {
+                    for _ in 0..*count {
+                        self.rand.cycle();
+                    }
+                },
             }
         }
 
@@ -2198,10 +2237,17 @@ impl Game {
     }
 
     // Replays some recorded inputs to the game
-    pub fn replay(mut self, replay: Replay, output_bin: Option<PathBuf>, start_save_path: Option<&PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn replay(
+        mut self,
+        replay: Replay,
+        output_bin: Option<PathBuf>,
+        start_save_path: Option<&PathBuf>,
+        dump_video: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let mut frame_count: usize = 0;
         self.rand.set_seed(replay.start_seed);
         self.spoofed_time_nanos = Some(replay.start_time);
+        let mut current_frame_time: u32 = 0;
 
         // the tas ui creates some sprites, so as a hotfix we need to generate them here too
         // TODO don't
@@ -2225,7 +2271,7 @@ impl Game {
                 },
                 Err(e) => {
                     panic!("(Fatal) Error loading savestate file: {:?}", e);
-                }
+                },
             }
         } else {
             for ev in replay.startup_events.iter() {
@@ -2239,12 +2285,16 @@ impl Game {
         loop {
             self.window.poll_events();
             self.input.mouse_step();
-            
+
             if self.frame_limit_at > 0 && frame_count == self.frame_limit_at || frame_count == replay.frame_count() {
                 if let Some(bin) = &output_bin {
                     if start_save_path.is_some() {
                         // Store the current framebuffer since it's used by the savestate. Only matters if there already is a framebuffer stored which is the case when loading a savestate.
-                        self.renderer.resize_framebuffer(self.renderer.stored_size().0, self.renderer.stored_size().1, true);
+                        self.renderer.resize_framebuffer(
+                            self.renderer.stored_size().0,
+                            self.renderer.stored_size().1,
+                            true,
+                        );
                     }
                     let render_state = self.renderer.state();
                     let mut new_replay = replay.clone();
@@ -2252,7 +2302,12 @@ impl Game {
                     match SaveState::from(&mut self, new_replay, render_state, clean_state)
                         .save_to_file(bin, &mut savestate::Buffer::new())
                     {
-                        Ok(()) => break Ok(()),
+                        Ok(()) => {
+                            if dump_video {
+                                self.ffmpeg_dumper.wait_with_output().unwrap();
+                            }
+                            break Ok(());
+                        },
                         Err(e) => break Err(format!("Error saving to {:?}: {:?}", output_bin, e).into()),
                     }
                 }
@@ -2265,13 +2320,30 @@ impl Game {
                         self.stored_events.len(),
                         frame_count,
                     )
-                    .into())
+                    .into());
                 }
 
                 self.set_input_from_frame(frame);
             }
 
             self.frame()?;
+            if dump_video {
+                while current_frame_time < 50 {
+                    if self.auto_draw && self.scene_change.is_none() && self.play_type != PlayType::Record {
+                        self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
+                        let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                        let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                        let pixels = self.renderer.get_pixels(0, 0, w, h);
+                        assert!(h == 608);
+                        assert!(w == 800);
+                        let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+                        stdin.write_all(&pixels).unwrap();
+                    }
+                    current_frame_time += self.room.speed;
+                }
+                current_frame_time -= 50;
+            }
+
             match self.scene_change {
                 Some(SceneChange::Room(id)) => self.load_room(id)?,
                 Some(SceneChange::Restart) => self.restart()?,
@@ -2285,7 +2357,7 @@ impl Game {
 
             // exit if X pressed or game_end() invoked
             if self.close_requested {
-                break Ok(self.run_game_end_events()?)
+                break Ok(self.run_game_end_events()?);
             }
 
             // frame limiter
@@ -2345,7 +2417,7 @@ impl Game {
     pub fn check_collision(&self, i1: usize, i2: usize) -> bool {
         // Don't check for collision with yourself
         if i1 == i2 {
-            return false
+            return false;
         }
         // Get the sprite masks we're going to use and update instances' bbox vars
         let inst1 = self.room.instance_list.get(i1);
@@ -2369,7 +2441,7 @@ impl Game {
             || inst1.bbox_bottom < inst2.bbox_top
             || inst2.bbox_bottom < inst1.bbox_top
         {
-            return false
+            return false;
         }
 
         // AABB passed - now we do precise pixel checks in the intersection of the two rectangles.
@@ -2456,7 +2528,7 @@ impl Game {
                                 .copied()
                                 .unwrap_or(false)
                         {
-                            return true
+                            return true;
                         }
                     }
                 }
@@ -2485,12 +2557,12 @@ impl Game {
             || Real::from(inst.bbox_bottom.get()) < y
             || y < Real::from(inst.bbox_top.get())
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2546,12 +2618,12 @@ impl Game {
             || inst.bbox_bottom.get() < rect_top
             || rect_bottom < inst.bbox_top.get()
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2599,7 +2671,7 @@ impl Game {
                             .copied()
                             .unwrap_or(false)
                     {
-                        return true
+                        return true;
                     }
                 }
             }
@@ -2636,7 +2708,7 @@ impl Game {
             || bbox_bottom + Real::from(1.0) <= rect_top
             || rect_bottom < bbox_top
         {
-            return false
+            return false;
         }
 
         let rect_left = rect_left.round().to_i32();
@@ -2666,13 +2738,13 @@ impl Game {
                 && !point_in_ellipse(bbox_right.into(), bbox_top.into())
                 && !point_in_ellipse(bbox_right.into(), bbox_bottom.into())
             {
-                return false
+                return false;
             }
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2723,7 +2795,7 @@ impl Game {
                                 .copied()
                                 .unwrap_or(false)
                         {
-                            return true
+                            return true;
                         }
                     }
                 }
@@ -2761,7 +2833,7 @@ impl Game {
             || bbox_bottom + Real::from(1.0) <= rect_top
             || rect_bottom < bbox_top
         {
-            return false
+            return false;
         }
 
         // Truncate to the line horizontally
@@ -2780,12 +2852,12 @@ impl Game {
         if (bbox_top > y1 && bbox_top > y2)
             || (y1 >= bbox_bottom + Real::from(1.0) && y2 >= bbox_bottom + Real::from(1.0))
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2821,7 +2893,7 @@ impl Game {
             let get_point = |i: i32| {
                 // Avoid dividing by zero
                 if point_count == 1 {
-                    return (Real::from(x1), Real::from(y1))
+                    return (Real::from(x1), Real::from(y1));
                 }
                 if iter_vert {
                     let slope = Real::from(x2 - x1) / Real::from(y2 - y1);
@@ -2849,7 +2921,7 @@ impl Game {
                     && y <= collider.bbox_bottom as i32
                     && collider.data.get((y as usize * collider.width as usize) + x as usize).copied().unwrap_or(false)
                 {
-                    return true
+                    return true;
                 }
             }
             false
@@ -2864,7 +2936,7 @@ impl Game {
         while let Some(target) = iter.next(&self.room.instance_list) {
             if self.room.instance_list.get(target).solid.get() {
                 if self.check_collision(inst, target) {
-                    return Some(target)
+                    return Some(target);
                 }
             }
         }
@@ -2877,7 +2949,7 @@ impl Game {
         while let Some(target) = iter.next(&self.room.instance_list) {
             if inst != target {
                 if self.check_collision(inst, target) {
-                    return Some(target)
+                    return Some(target);
                 }
             }
         }
@@ -2895,7 +2967,7 @@ impl Game {
                     match iter.next(&self.room.instance_list) {
                         Some(handle) => {
                             if pred(handle) {
-                                break Some(handle)
+                                break Some(handle);
                             }
                         },
                         None => break None,
@@ -2909,7 +2981,7 @@ impl Game {
                     match iter.next(&self.room.instance_list) {
                         Some(handle) => {
                             if pred(handle) {
-                                break Some(handle)
+                                break Some(handle);
                             }
                         },
                         None => break None,
@@ -2918,7 +2990,11 @@ impl Game {
             },
             instance_id => {
                 if let Some(handle) = self.room.instance_list.get_by_instid(instance_id) {
-                    if self.room.instance_list.get(handle).is_active() && pred(handle) { Some(handle) } else { None }
+                    if self.room.instance_list.get(handle).is_active() && pred(handle) {
+                        Some(handle)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
