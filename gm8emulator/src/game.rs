@@ -2285,6 +2285,25 @@ impl Game {
         loop {
             self.window.poll_events();
             self.input.mouse_step();
+            if frame_count % 10_000 == 0 {
+                if let Some(_bin) = &output_bin {
+                    if start_save_path.is_some() {
+                        // Store the current framebuffer since it's used by the savestate. Only matters if there already is a framebuffer stored which is the case when loading a savestate.
+                        self.renderer.resize_framebuffer(
+                            self.renderer.stored_size().0,
+                            self.renderer.stored_size().1,
+                            true,
+                        );
+                    }
+                    let render_state = self.renderer.state();
+                    let mut new_replay = replay.clone();
+                    new_replay.truncate_frames(frame_count);
+                    let save_path = PathBuf::from(format!("save_{}.bin", frame_count));
+                    SaveState::from(&mut self, new_replay, render_state, clean_state)
+                        .save_to_file(&save_path, &mut savestate::Buffer::new())
+                        .unwrap()
+                }
+            }
 
             if self.frame_limit_at > 0 && frame_count == self.frame_limit_at || frame_count == replay.frame_count() {
                 if let Some(bin) = &output_bin {
