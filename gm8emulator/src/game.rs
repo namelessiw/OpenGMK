@@ -1714,6 +1714,15 @@ impl Game {
             // Draw "frame 0", perform transition if applicable, and then return
             if self.auto_draw {
                 self.draw()?;
+                if self.play_type != PlayType::Record {
+                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                    let pixels = self.renderer.get_pixels(0, 0, w, h);
+                    assert!(h == 608);
+                    assert!(w == 800);
+                    let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+                    stdin.write_all(&pixels).unwrap();
+                }
                 if let Some(transition) = self.get_transition(transition_kind) {
                     let (width, height) = self.window_inner_size;
                     self.renderer.reset_target();
@@ -1728,7 +1737,7 @@ impl Game {
                     // the builtin transitions will run too fast.
                     // This would be hell to emulate, so let's just standardize the framerate and call it a day.
                     // Most of the builtin transitions seem to run at around 120FPS in our tests, so let's go with that.
-                    const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000u64 / 50);
+                    const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000u64 / 120);
                     let mut current_time = Instant::now();
                     let perspective = self.renderer.get_perspective();
                     for i in 0..self.transition_steps + 1 {
@@ -1750,16 +1759,7 @@ impl Game {
                             if let Some(dur) = FRAME_TIME.checked_sub(diff) {
                                 gml::datetime::sleep(dur);
                             }
-                            self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
-                            let w: i32 = self.window_inner_size.0.try_into().unwrap();
-                            let h: i32 = self.window_inner_size.1.try_into().unwrap();
-                            let pixels = self.renderer.get_pixels(0, 0, w, h);
-                            assert!(h == 608);
-                            assert!(w == 800);
-                            let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
-                            stdin.write_all(&pixels).unwrap();
                         }
-
                         if let Some(t) = &mut self.spoofed_time_nanos {
                             *t += FRAME_TIME.as_nanos();
                         }
