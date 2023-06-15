@@ -1722,6 +1722,7 @@ impl Game {
                     assert!(w == 800);
                     let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
                     stdin.write_all(&pixels).unwrap();
+                    println!("Duplicated frame on room load");
                 }
                 if let Some(transition) = self.get_transition(transition_kind) {
                     let (width, height) = self.window_inner_size;
