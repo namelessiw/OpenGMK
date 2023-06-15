@@ -1338,8 +1338,6 @@ impl Game {
                 .arg("0")
                 .arg("dump.avi")
                 .stdin(Stdio::piped())
-                .stderr(Stdio::piped())
-                .stdout(Stdio::piped())
                 .spawn()
                 .expect("Failed to open stdin"),
         };
@@ -1721,7 +1719,10 @@ impl Game {
                     assert!(h == 608);
                     assert!(w == 800);
                     let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+
                     stdin.write_all(&pixels).unwrap();
+                    stdin.flush().unwrap();
+
                     println!("Duplicated frame on room load");
                 }
                 if let Some(transition) = self.get_transition(transition_kind) {
@@ -2346,8 +2347,11 @@ impl Game {
                         let pixels = self.renderer.get_pixels(0, 0, w, h);
                         assert!(h == 608);
                         assert!(w == 800);
+
                         let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+
                         stdin.write_all(&pixels).unwrap();
+                        stdin.flush().unwrap();
                     }
                     current_frame_time += self.room.speed;
                 }
