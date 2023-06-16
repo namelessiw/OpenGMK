@@ -1721,7 +1721,6 @@ impl Game {
                     let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 
                     stdin.write_all(&pixels).unwrap();
-                    stdin.flush().unwrap();
 
                     println!("Duplicated frame on room load");
                 }
@@ -2351,7 +2350,6 @@ impl Game {
                         let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 
                         stdin.write_all(&pixels).unwrap();
-                        stdin.flush().unwrap();
                     }
                     current_frame_time += self.room.speed;
                 }
