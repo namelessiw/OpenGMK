@@ -1339,6 +1339,7 @@ impl Game {
                 .arg("dump.avi")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
+                .stderr(Stdio::null())
                 .spawn()
                 .expect("Failed to open stdin"),
         };
