@@ -1338,6 +1338,7 @@ impl Game {
                 .arg("0")
                 .arg("dump.avi")
                 .stdin(Stdio::piped())
+                .stdout(Stdio::null())
                 .spawn()
                 .expect("Failed to open stdin"),
         };
@@ -1721,8 +1722,6 @@ impl Game {
                     let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 
                     stdin.write_all(&pixels).unwrap();
-
-                    println!("Duplicated frame on room load");
                 }
                 if let Some(transition) = self.get_transition(transition_kind) {
                     let (width, height) = self.window_inner_size;
