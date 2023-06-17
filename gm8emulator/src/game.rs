@@ -1711,19 +1711,20 @@ impl Game {
             // Let then next frame handle it
             Ok(())
         } else {
+            if self.play_type != PlayType::Record {
+                let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                let pixels = self.renderer.get_pixels(0, 0, w, h);
+                assert!(h == 608);
+                assert!(w == 800);
+                let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+
+                stdin.write_all(&pixels).unwrap();
+            }
             // Draw "frame 0", perform transition if applicable, and then return
             if self.auto_draw {
                 self.draw()?;
-                if self.play_type != PlayType::Record {
-                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
-                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
-                    let pixels = self.renderer.get_pixels(0, 0, w, h);
-                    assert!(h == 608);
-                    assert!(w == 800);
-                    let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 
-                    stdin.write_all(&pixels).unwrap();
-                }
                 if let Some(transition) = self.get_transition(transition_kind) {
                     let (width, height) = self.window_inner_size;
                     self.renderer.reset_target();
@@ -2339,7 +2340,7 @@ impl Game {
             self.frame()?;
             if dump_video {
                 while current_frame_time < 50 {
-                    if self.auto_draw && self.scene_change.is_none() && self.play_type != PlayType::Record {
+                    if self.scene_change.is_none() && self.play_type != PlayType::Record {
                         self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
                         let w: i32 = self.window_inner_size.0.try_into().unwrap();
                         let h: i32 = self.window_inner_size.1.try_into().unwrap();
