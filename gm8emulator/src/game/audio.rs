@@ -61,6 +61,7 @@ impl AudioManager {
         let sample_rate = device.sample_rate();
         let channel_count = device.channel_count();
         let global_volume = Arc::new(AtomicU32::from(1.0f32.to_bits()));
+
         let (mixer, mixer_handle) = Mixer::new(sample_rate, channel_count, global_volume.clone());
 
         std::thread::spawn(move || {
