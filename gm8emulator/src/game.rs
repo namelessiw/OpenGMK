@@ -1336,7 +1336,7 @@ impl Game {
                 .arg("veryslow")
                 .arg("-qp")
                 .arg("0")
-                .arg("dump.avi")
+                .arg("dump.mkv")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
