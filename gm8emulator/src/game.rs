@@ -1324,7 +1324,7 @@ impl Game {
                 .arg("-pixel_format")
                 .arg("rgba")
                 .arg("-video_size")
-                .arg("800x608")
+                .arg(format!("{}x{}", width, height))
                 .arg("-framerate")
                 .arg("50")
                 .arg("-an")
@@ -1715,8 +1715,6 @@ impl Game {
                 let w: i32 = self.window_inner_size.0.try_into().unwrap();
                 let h: i32 = self.window_inner_size.1.try_into().unwrap();
                 let pixels = self.renderer.get_pixels(0, 0, w, h);
-                assert!(h == 608);
-                assert!(w == 800);
                 let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 
                 stdin.write_all(&pixels).unwrap();
@@ -2345,8 +2343,6 @@ impl Game {
                         let w: i32 = self.window_inner_size.0.try_into().unwrap();
                         let h: i32 = self.window_inner_size.1.try_into().unwrap();
                         let pixels = self.renderer.get_pixels(0, 0, w, h);
-                        assert!(h == 608);
-                        assert!(w == 800);
 
                         let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
 

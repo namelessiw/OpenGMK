@@ -132,7 +132,6 @@ impl Source for Mixer {
         unsafe {
             let samples = std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 4);
             stdin.write_all(samples).unwrap();
-            stdin.flush().unwrap();
         }
         buffer.len()
     }
