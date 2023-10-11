@@ -68,7 +68,7 @@ impl Openable<Self> for MacroWindow {
 impl MacroWindow {
     pub fn new() -> Self {
         MacroWindow {
-            input_buffer: vec![0 as u8; 16384],
+            input_buffer: vec![0 as u8; 65536],
             start_frame: 0,
             last_frame: 0,
             info_text: String::from("Not running"),
