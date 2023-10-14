@@ -1,18 +1,22 @@
+use std::{env::var, fs, println};
+
 use crate::{
-    input::Button,
     game::{
         recording::{
-            KeyState,
             keybinds::Binding,
-            window::{Window, Openable, DisplayInformation},
+            window::{DisplayInformation, Openable, Window},
+            KeyState,
         },
+        GetAsset,
     },
+    input::Button,
 };
 
 pub struct MacroWindow {
-    input_buffer: Vec<u8>,
+    input_buffer: [u8; 65536],
     start_frame: usize,
     last_frame: usize,
+    last_room: i32,
     info_text: String,
     is_open: bool,
     input_frames: Vec<Vec<StateChange>>,
@@ -36,20 +40,22 @@ impl Window for MacroWindow {
     fn stored_kind(&self) -> Option<super::WindowKind> {
         Some(super::WindowKind::Macro(self.id))
     }
-    
+
     fn window_id(&self) -> usize {
         self.id
     }
 
     fn name(&self) -> String {
-        format!("Macro {}", self.id+1)
+        format!("Macro {}", self.id + 1)
     }
 
     fn show_window(&mut self, info: &mut DisplayInformation) {
         self.show_macro_windows(info);
     }
 
-    fn is_open(&self) -> bool { self.is_open }
+    fn is_open(&self) -> bool {
+        self.is_open
+    }
 }
 impl Openable<Self> for MacroWindow {
     fn window_name() -> &'static str {
@@ -68,9 +74,10 @@ impl Openable<Self> for MacroWindow {
 impl MacroWindow {
     pub fn new() -> Self {
         MacroWindow {
-            input_buffer: vec![0 as u8; 65536],
+            input_buffer: [0 as u8; 65536],
             start_frame: 0,
             last_frame: 0,
+            last_room: 0,
             info_text: String::from("Not running"),
             input_frames: Vec::new(),
             is_open: true,
@@ -82,13 +89,7 @@ impl MacroWindow {
 
     fn show_macro_windows(&mut self, info: &mut DisplayInformation) {
         let keybind_pressed = info.keybind_pressed(Binding::ToggleMacros);
-        let DisplayInformation {
-            keyboard_state,
-            keybindings,
-            config,
-            frame,
-            ..
-        } = info;
+        let DisplayInformation { keyboard_state, keybindings, config, frame, .. } = info;
 
         frame.begin_window(&self.name(), None, true, false, Some(&mut self.is_open));
 
@@ -96,7 +97,7 @@ impl MacroWindow {
         if self.run_macro {
             flags = cimgui_sys::ImGuiInputTextFlags__ImGuiInputTextFlags_ReadOnly as _;
         }
-        
+
         let window_size = frame.window_size();
         let content_position = frame.content_position();
         frame.set_next_item_width(window_size.0 - content_position.0 * 2.0);
@@ -105,12 +106,30 @@ impl MacroWindow {
             keybindings.disable_bindings();
         }
 
-        let pressed = frame.checkbox("Run Macro", &mut self.run_macro) || keybind_pressed;
+        let mut pressed = frame.checkbox("Run Macro", &mut self.run_macro) || keybind_pressed;
         if keybind_pressed {
             self.run_macro = !self.run_macro;
         }
         frame.same_line(0.0, -1.0);
         frame.checkbox("Repeat Macro", &mut self.repeat_macro);
+        if info.game.room.id != self.last_room {
+            println!("room id changed");
+            self.last_room = info.game.room.id;
+            if let Some(current_room) = info.game.assets.rooms.get_asset(info.game.room.id) {
+                println!("{}", current_room.name);
+                let macro_path =
+                    format!("{}/Jump Bruteforcer macros/{}.txt", var("LocalAppData").unwrap(), current_room.name);
+                match fs::read_to_string(macro_path) {
+                    Ok(room_macro) => {
+                        pressed = true;
+                        let room_macro_bytes = room_macro.into_bytes();
+                        self.input_buffer.fill(0);
+                        self.input_buffer[..room_macro_bytes.len()].copy_from_slice(&room_macro_bytes);
+                    },
+                    Err(e) => println!("{}", e.to_string()),
+                }
+            }
+        }
         if pressed {
             if self.run_macro {
                 self.start_frame = config.current_frame;
@@ -119,9 +138,8 @@ impl MacroWindow {
                 self.info_text = String::from("Not running");
             }
         }
-        
+
         frame.text(&self.info_text);
-        
         // Apply the current frame of the macro if the frame has changed
         if self.run_macro && self.last_frame != config.current_frame {
             self.last_frame = config.current_frame;
@@ -140,16 +158,19 @@ impl MacroWindow {
                 // and we repeat the macro or are still at the first iteration
                 if self.repeat_macro || config.current_frame - self.start_frame < self.input_frames.len() {
                     let current_frame = self.input_frames.get(index).unwrap();
-                    
+
                     for entry in current_frame {
                         match entry {
                             StateChange::Click(index) => keyboard_state.get_mut(*index).unwrap().click(),
-                            StateChange::ChangeTo(index, state) => keyboard_state.get_mut(*index).unwrap().reset_to_state(*state),
+                            StateChange::ChangeTo(index, state) => {
+                                keyboard_state.get_mut(*index).unwrap().reset_to_state(*state)
+                            },
                         }
                     }
                 }
             } else {
-                self.info_text = format!("Macro Frame -{}/{}", self.start_frame - config.current_frame, self.input_frames.len() - 1);
+                self.info_text =
+                    format!("Macro Frame -{}/{}", self.start_frame - config.current_frame, self.input_frames.len() - 1);
             }
         }
 
@@ -167,7 +188,7 @@ impl MacroWindow {
             Err(_) => {
                 self.run_macro = false;
                 self.info_text = String::from("Failed to create string from input");
-            }
+            },
         }
     }
 
@@ -219,13 +240,31 @@ impl MacroWindow {
                         unexpected_token!();
                     }
                     match token.as_str() {
-                        "(R)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillCactus)),
-                        "(RP)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillDouble)),
-                        "(RPR)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillTriple)),
-                        "(P)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillPress)),
-                        "(PR)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillDouble)),
-                        "(PRP)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillTriple)),
-                        _ => { unexpected_token!("Unknown modifier token '{}'") },
+                        "(R)" => {
+                            state_change =
+                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillCactus))
+                        },
+                        "(RP)" => {
+                            state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillDouble))
+                        },
+                        "(RPR)" => {
+                            state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillTriple))
+                        },
+                        "(P)" => {
+                            state_change =
+                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillPress))
+                        },
+                        "(PR)" => {
+                            state_change =
+                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillDouble))
+                        },
+                        "(PRP)" => {
+                            state_change =
+                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillTriple))
+                        },
+                        _ => {
+                            unexpected_token!("Unknown modifier token '{}'")
+                        },
                     }
                 },
                 TokenType::KeySeparator => {
@@ -257,7 +296,11 @@ impl MacroWindow {
         changes.clear();
     }
 
-    fn next_token(&self, chars: &mut std::iter::Peekable<std::str::Chars<'_>>, token: &mut String) -> Option<TokenType> {
+    fn next_token(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+        token: &mut String,
+    ) -> Option<TokenType> {
         let mut tt: Option<TokenType> = None;
         let mut token_valid = true;
         macro_rules! check_no_tokentype {
@@ -302,11 +345,11 @@ impl MacroWindow {
                             tt = None;
                             break;
                         }
-                    }
+                    },
                     _ => {
                         tt = None;
                         break;
-                    }
+                    },
                 }
             } else {
                 match chr {
@@ -343,16 +386,20 @@ impl MacroWindow {
                             tt = None;
                             break;
                         }
-                    }
+                    },
                     _ => {
                         tt = None;
                         break;
-                    }
+                    },
                 }
             }
-        };
+        }
 
-        if token_valid { tt } else { None }
+        if token_valid {
+            tt
+        } else {
+            None
+        }
     }
 }
 
@@ -585,7 +632,7 @@ impl Button {
             "Zoom" => Some(Self::Zoom),
             "Pa1" => Some(Self::Pa1),
             "OemClear" => Some(Self::OemClear),
-            _ => None,            
+            _ => None,
         }
     }
 }
