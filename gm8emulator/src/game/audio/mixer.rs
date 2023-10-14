@@ -11,6 +11,7 @@ use std::{
         Arc,
     },
 };
+
 use udon::source::{ChannelCount, Sample, SampleRate, Source};
 
 const INIT_CAPACITY: usize = 16;
@@ -24,7 +25,7 @@ pub struct Mixer {
     global_volume: Arc<AtomicU32>,
     input_buffer: Vec<Sample>,
     receiver: Receiver<Command>,
-    audio_dumper: Child,
+    audio_dumper: Option<Child>,
 }
 
 enum Command {
@@ -47,24 +48,31 @@ pub enum Error {
 }
 
 impl Mixer {
-    pub fn new(sample_rate: SampleRate, channels: ChannelCount, global_volume: Arc<AtomicU32>) -> (Self, MixerHandle) {
+    pub fn new(
+        sample_rate: SampleRate,
+        channels: ChannelCount,
+        global_volume: Arc<AtomicU32>,
+        dump_audio: bool,
+    ) -> (Self, MixerHandle) {
         let (sender, receiver) = mpsc::channel();
-        let audio_dumper = process::Command::new("ffmpeg")
-            .arg("-y")
-            .arg("-f")
-            .arg("f32le")
-            .arg("-ar")
-            .arg("48k")
-            .arg("-ac")
-            .arg("2")
-            .arg("-i")
-            .arg("-")
-            .arg("dump.wav")
-            .stdin(Stdio::piped())
-            //.stdout(Stdio::null())
-            //.stderr(Stdio::null())
-            .spawn()
-            .expect("Failed to open stdin");
+        let audio_dumper = dump_audio.then(|| {
+            process::Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-f")
+                .arg("f32le")
+                .arg("-ar")
+                .arg("48k")
+                .arg("-ac")
+                .arg("2")
+                .arg("-i")
+                .arg("-")
+                .arg("dump.wav")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Failed to open FFmpeg stdin")
+        });
         (
             Self {
                 channels,
@@ -99,7 +107,9 @@ impl Source for Mixer {
                 Command::StopAll => {
                     self.sources.clear();
                     self.exclusive_source = None;
-                    self.audio_dumper.wait().unwrap();
+                    if self.audio_dumper.is_some() {
+                        self.audio_dumper.as_mut().unwrap().wait().unwrap();
+                    }
                 },
             }
         }
@@ -117,7 +127,7 @@ impl Source for Mixer {
         let input_buffer = &mut self.input_buffer;
         input_buffer.resize_with(buffer.len(), Default::default);
         let global_volume = f32::from_bits(self.global_volume.load(Ordering::Acquire));
-        let stdin = self.audio_dumper.stdin.as_mut().expect("Failed to open stdin");
+
         RetainMut::retain_mut(&mut self.sources, |(source, params, _)| {
             let volume = f32::from_bits(params.volume.load(Ordering::Acquire));
             let count = source.write_samples(input_buffer);
@@ -128,11 +138,14 @@ impl Source for Mixer {
 
             count == input_buffer.len()
         });
-
-        unsafe {
-            let samples = std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 4);
-            stdin.write_all(samples).unwrap();
+        if self.audio_dumper.is_some() {
+            let stdin = self.audio_dumper.as_mut().unwrap().stdin.as_mut().expect("Failed to open stdin");
+            unsafe {
+                let samples = std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 4);
+                stdin.write_all(samples).unwrap();
+            }
         }
+
         buffer.len()
     }
 

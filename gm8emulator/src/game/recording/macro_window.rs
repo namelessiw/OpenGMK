@@ -113,14 +113,13 @@ impl MacroWindow {
         frame.same_line(0.0, -1.0);
         frame.checkbox("Repeat Macro", &mut self.repeat_macro);
         if info.game.room.id != self.last_room {
-            println!("room id changed");
             self.last_room = info.game.room.id;
             if let Some(current_room) = info.game.assets.rooms.get_asset(info.game.room.id) {
-                println!("{}", current_room.name);
                 let macro_path =
                     format!("{}/Jump Bruteforcer macros/{}.txt", var("LocalAppData").unwrap(), current_room.name);
                 match fs::read_to_string(macro_path) {
                     Ok(room_macro) => {
+                        println!("{}", current_room.name);
                         pressed = true;
                         let room_macro_bytes = room_macro.into_bytes();
                         self.input_buffer.fill(0);
@@ -129,7 +128,7 @@ impl MacroWindow {
                         keyboard_state.get_mut(Button::LeftArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
                         keyboard_state.get_mut(Button::RightArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
                     },
-                    Err(e) => println!("{}", e.to_string()),
+                    Err(e) => eprintln!("{}", e.to_string()),
                 }
             }
         }

@@ -54,7 +54,7 @@ pub struct AudioManager {
 }
 
 impl AudioManager {
-    pub fn new(do_output: bool) -> Self {
+    pub fn new(do_output: bool, do_dump_audio: bool) -> Self {
         // TODO: not all these unwraps
         let session = Session::new(Api::SoundIo).unwrap();
         let device = session.default_output_device().unwrap();
@@ -62,7 +62,7 @@ impl AudioManager {
         let channel_count = device.channel_count();
         let global_volume = Arc::new(AtomicU32::from(1.0f32.to_bits()));
 
-        let (mixer, mixer_handle) = Mixer::new(sample_rate, channel_count, global_volume.clone());
+        let (mixer, mixer_handle) = Mixer::new(sample_rate, channel_count, global_volume.clone(), do_dump_audio);
 
         std::thread::spawn(move || {
             let stream = session.open_output_stream(device).unwrap();

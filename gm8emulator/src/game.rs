@@ -172,6 +172,7 @@ pub struct Game {
     pub stored_events: VecDeque<replay::Event>,
     pub frame_limiter: bool,   // whether to limit FPS of gameplay by room_speed
     pub frame_limit_at: usize, // on which frame to start limiting FPS
+    pub ffmpeg_dumper: Option<Child>,
 
     pub audio: audio::AudioManager,
 
@@ -193,7 +194,6 @@ pub struct Game {
     pub unscaled_width: u32,
     // Height the window is supposed to have, assuming it hasn't been resized by the user
     pub unscaled_height: u32,
-    pub ffmpeg_dumper: Child,
 }
 
 /// Enum indicating which GameMaker version a game was built with
@@ -289,6 +289,7 @@ impl Game {
         encoding: &'static Encoding,
         frame_limiter: bool,
         frame_limit_at: usize,
+        dump_audiovideo: bool,
         play_type: PlayType,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         // Parse file path
@@ -587,9 +588,35 @@ impl Game {
         }
 
         let window = builder.build()?;
-
+        let ffmpeg_dumper = dump_audiovideo.then(|| {
+            Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-f")
+                .arg("rawvideo")
+                .arg("-pixel_format")
+                .arg("rgba")
+                .arg("-video_size")
+                .arg(format!("{}x{}", width, height))
+                .arg("-framerate")
+                .arg("50")
+                .arg("-an")
+                .arg("-i")
+                .arg("-")
+                .arg("-c:v")
+                .arg("libx264rgb")
+                .arg("-preset")
+                .arg("veryslow")
+                .arg("-qp")
+                .arg("0")
+                .arg("dump.mkv")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Failed to open FFmpeg stdin")
+        });
         // Set up audio manager
-        let mut audio = audio::AudioManager::new(play_type != PlayType::Record);
+        let mut audio = audio::AudioManager::new(play_type != PlayType::Record, dump_audiovideo);
 
         // TODO: specific flags here (make wb mutable)
 
@@ -1285,6 +1312,7 @@ impl Game {
             spoofed_time_nanos: None,
             frame_limiter,
             frame_limit_at,
+            ffmpeg_dumper,
             fps: 0,
             frame_counter: 0,
             parameters: game_arguments,
@@ -1317,31 +1345,6 @@ impl Game {
             window_offset_spoof: (0, 0),
             window_sizeable: settings.allow_resize,
             window_visible: true,
-            ffmpeg_dumper: Command::new("ffmpeg")
-                .arg("-y")
-                .arg("-f")
-                .arg("rawvideo")
-                .arg("-pixel_format")
-                .arg("rgba")
-                .arg("-video_size")
-                .arg(format!("{}x{}", width, height))
-                .arg("-framerate")
-                .arg("50")
-                .arg("-an")
-                .arg("-i")
-                .arg("-")
-                .arg("-c:v")
-                .arg("libx264rgb")
-                .arg("-preset")
-                .arg("veryslow")
-                .arg("-qp")
-                .arg("0")
-                .arg("dump.mkv")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("Failed to open stdin"),
         };
 
         game.temp_directory = game.encode_str_maybe(temp_directory.to_str().unwrap()).unwrap().into_owned().into();
@@ -1715,9 +1718,16 @@ impl Game {
                 let w: i32 = self.window_inner_size.0.try_into().unwrap();
                 let h: i32 = self.window_inner_size.1.try_into().unwrap();
                 let pixels = self.renderer.get_pixels(0, 0, w, h);
-                let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
-
-                stdin.write_all(&pixels).unwrap();
+                if self.ffmpeg_dumper.is_some() {
+                    self.ffmpeg_dumper
+                        .as_mut()
+                        .unwrap()
+                        .stdin
+                        .as_mut()
+                        .expect("Failed to open stdin")
+                        .write_all(&pixels)
+                        .unwrap();
+                }
             }
             // Draw "frame 0", perform transition if applicable, and then return
             if self.auto_draw {
@@ -2251,7 +2261,6 @@ impl Game {
         replay: Replay,
         output_bin: Option<PathBuf>,
         start_save_path: Option<&PathBuf>,
-        dump_video: bool,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut frame_count: usize = 0;
         self.rand.set_seed(replay.start_seed);
@@ -2312,8 +2321,8 @@ impl Game {
                         .save_to_file(bin, &mut savestate::Buffer::new())
                     {
                         Ok(()) => {
-                            if dump_video {
-                                self.ffmpeg_dumper.wait_with_output().unwrap();
+                            if self.ffmpeg_dumper.is_some() {
+                                self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
                             }
                             break Ok(());
                         },
@@ -2336,7 +2345,7 @@ impl Game {
             }
 
             self.frame()?;
-            if dump_video {
+            if self.ffmpeg_dumper.is_some() {
                 while current_frame_time < 50 {
                     if self.scene_change.is_none() && self.play_type != PlayType::Record {
                         self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
@@ -2344,7 +2353,7 @@ impl Game {
                         let h: i32 = self.window_inner_size.1.try_into().unwrap();
                         let pixels = self.renderer.get_pixels(0, 0, w, h);
 
-                        let stdin = self.ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+                        let stdin = self.ffmpeg_dumper.as_mut().unwrap().stdin.as_mut().expect("Failed to open stdin");
 
                         stdin.write_all(&pixels).unwrap();
                     }
