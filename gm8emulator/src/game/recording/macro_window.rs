@@ -125,8 +125,11 @@ impl MacroWindow {
                         self.input_buffer.fill(0);
                         self.input_buffer[..room_macro_bytes.len()].copy_from_slice(&room_macro_bytes);
                         //makes sure directional inputs from prior room don't affect the current one
-                        keyboard_state.get_mut(Button::LeftArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
-                        keyboard_state.get_mut(Button::RightArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
+
+                        *keyboard_state.get_mut(Button::LeftArrow as usize).unwrap() = KeyState::Neutral;
+                        *keyboard_state.get_mut(Button::RightArrow as usize).unwrap() = KeyState::Neutral;
+                        info.game.input.keyboard_clear(Button::LeftArrow as u8);
+                        info.game.input.keyboard_clear(Button::RightArrow as u8);
                     },
                     Err(e) => eprintln!("{}", e.to_string()),
                 }
