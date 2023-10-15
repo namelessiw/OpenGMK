@@ -124,12 +124,6 @@ impl MacroWindow {
                         let room_macro_bytes = room_macro.into_bytes();
                         self.input_buffer.fill(0);
                         self.input_buffer[..room_macro_bytes.len()].copy_from_slice(&room_macro_bytes);
-                        //makes sure directional inputs from prior room don't affect the current one
-
-                        *keyboard_state.get_mut(Button::LeftArrow as usize).unwrap() = KeyState::Neutral;
-                        *keyboard_state.get_mut(Button::RightArrow as usize).unwrap() = KeyState::Neutral;
-                        info.game.input.keyboard_clear(Button::LeftArrow as u8);
-                        info.game.input.keyboard_clear(Button::RightArrow as u8);
                     },
                     Err(e) => eprintln!("{}", e.to_string()),
                 }
@@ -163,7 +157,10 @@ impl MacroWindow {
                 // and we repeat the macro or are still at the first iteration
                 if self.repeat_macro || config.current_frame - self.start_frame < self.input_frames.len() {
                     let current_frame = self.input_frames.get(index).unwrap();
-
+                    if (self.start_frame == config.current_frame) {
+                        keyboard_state.get_mut(Button::RightArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
+                        keyboard_state.get_mut(Button::LeftArrow as usize).unwrap().reset_to_state(KeyState::Neutral);
+                    }
                     for entry in current_frame {
                         match entry {
                             StateChange::Click(index) => keyboard_state.get_mut(*index).unwrap().click(),

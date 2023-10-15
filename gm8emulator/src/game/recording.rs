@@ -1,45 +1,34 @@
-mod window;
-mod game_window;
+mod console;
 mod control_window;
-mod savestate_window;
+mod game_window;
+mod input_edit;
 mod input_window;
 mod instance_report;
 mod keybinds;
-mod console;
-mod menu_bar;
-mod input_edit;
 mod macro_window;
+mod menu_bar;
+mod savestate_window;
 mod set_mouse_dialog;
+mod window;
 
 use crate::{
     game::{
-        savestate::{self, SaveState},
         recording::{
             instance_report::InstanceReport,
-            window::{
-                Window,
-                DisplayInformation,
-                Openable,
-            },
+            window::{DisplayInformation, Openable, Window},
         },
         replay::{self, Replay},
+        savestate::{self, SaveState},
         Game, SceneChange,
     },
     gml::rand::Random,
+    imgui, input,
     render::{atlas::AtlasRef, PrimitiveType, RendererState},
     types::Colour,
-    imgui, input,
 };
-use ramen::{
-    event::Event,
-    input::Key,
-};
+use ramen::{event::Event, input::Key};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::File,
-    path::PathBuf,
-    time::Instant,
-};
+use std::{fs::File, path::PathBuf, time::Instant};
 const GRID_COLOUR_GOOD: Colour = Colour::new(0.25, 0.625, 0.38671875);
 const GRID_COLOUR_BAD: Colour = Colour::new(0.75, 0.359375, 0.0);
 const CLEAR_COLOUR_GOOD: Colour = Colour::new(0.0196, 0.1059, 0.06275);
@@ -105,7 +94,7 @@ struct UIState<'g> {
 
     /// OpenGL state for the UI
     ui_renderer_state: RendererState,
-    
+
     /// A SaveState cached in memory to prevent having to load it from a file
     /// Usually used for whichever savestate is "selected" for quick access
     cached_savestate: SaveState,
@@ -210,7 +199,7 @@ impl KeyState {
                 | Self::HeldDoubleEveryFrame
         )
     }
-    
+
     fn reset_to_state(&mut self, target_state: KeyState) {
         let starts_with_press = self.starts_with_press();
         if target_state.starts_with_press() == starts_with_press {
@@ -219,25 +208,20 @@ impl KeyState {
             // target state expects button released, previous state is held
             *self = match target_state {
                 KeyState::Neutral
-                    | KeyState::NeutralWillCactus
-                    | KeyState::NeutralWillDouble
-                    | KeyState::NeutralDoubleEveryFrame
-                    => KeyState::HeldWillRelease,
-                KeyState::NeutralWillTriple
-                    | KeyState::NeutralWillPress
-                    => KeyState::HeldWillDouble,
+                | KeyState::NeutralWillCactus
+                | KeyState::NeutralWillDouble
+                | KeyState::NeutralDoubleEveryFrame => KeyState::HeldWillRelease,
+                KeyState::NeutralWillTriple => KeyState::HeldWillDouble,
+                KeyState::NeutralWillPress => KeyState::Held,
                 _ => unreachable!(),
             };
         } else {
             // target state expects button held, previous state is released
             *self = match target_state {
-                KeyState::Held
-                    | KeyState::HeldWillDouble
-                    | KeyState::HeldDoubleEveryFrame
-                    => KeyState::NeutralWillPress,
-                KeyState::HeldWillTriple
-                    | KeyState::HeldWillRelease
-                    => KeyState::NeutralWillDouble,
+                KeyState::Held | KeyState::HeldWillDouble | KeyState::HeldDoubleEveryFrame => {
+                    KeyState::NeutralWillPress
+                },
+                KeyState::HeldWillTriple | KeyState::HeldWillRelease => KeyState::NeutralWillDouble,
                 _ => unreachable!(),
             };
         }
@@ -260,9 +244,17 @@ impl KeyState {
 
     fn reset_to(&mut self, pressed: bool) {
         *self = if pressed {
-            if *self == Self::HeldDoubleEveryFrame { Self::HeldDoubleEveryFrame } else { Self::Held }
+            if *self == Self::HeldDoubleEveryFrame {
+                Self::HeldDoubleEveryFrame
+            } else {
+                Self::Held
+            }
         } else {
-            if *self == Self::NeutralDoubleEveryFrame { Self::NeutralDoubleEveryFrame } else { Self::Neutral }
+            if *self == Self::NeutralDoubleEveryFrame {
+                Self::NeutralDoubleEveryFrame
+            } else {
+                Self::Neutral
+            }
         };
     }
 
@@ -435,7 +427,7 @@ pub struct ProjectConfig {
     config_path: PathBuf,
     is_read_only: bool,
     current_frame: usize,
-    set_mouse_using_textbox: bool
+    set_mouse_using_textbox: bool,
 }
 
 impl ProjectConfig {
@@ -455,7 +447,7 @@ impl ProjectConfig {
             current_frame: 0,
             set_mouse_using_textbox: false,
         };
-        
+
         let mut config = if config_path.exists() {
             match bincode::deserialize_from(File::open(&config_path).expect("Couldn't read project.cfg")) {
                 Ok(config) => config,
@@ -532,9 +524,9 @@ impl Game {
                 let c = (31..34).contains(&(y - x).abs()) || (31..34).contains(&(y + x - 63).abs());
                 match (i & 1 != 0, i & 2 != 0) {
                     (false, false) => u8::from(c) * 255, // r
-                    (true, false) => u8::from(c) * 255, // g
-                    (false, true) => u8::from(c) * 255, // b
-                    (true, true) => u8::from(c) * 255, // a
+                    (true, false) => u8::from(c) * 255,  // g
+                    (false, true) => u8::from(c) * 255,  // b
+                    (true, true) => u8::from(c) * 255,   // a
                 }
             })
             .collect::<Vec<_>>()
@@ -779,11 +771,11 @@ impl Game {
                 WindowKind::Keybindings => windows.push((Box::new(keybinds::KeybindWindow::open(0)), false)),
                 WindowKind::Macro(id) => windows.push((Box::new(macro_window::MacroWindow::open(*id)), false)),
                 WindowKind::Console(id) => windows.push((Box::new(console::ConsoleWindow::open(*id)), false)),
-                WindowKind::Control 
-                 | WindowKind::Game
-                 | WindowKind::InstanceReports
-                 | WindowKind::Input
-                 | WindowKind::Savestates => panic!("Control windows can not be stored in project config"),
+                WindowKind::Control
+                | WindowKind::Game
+                | WindowKind::InstanceReports
+                | WindowKind::Input
+                | WindowKind::Savestates => panic!("Control windows can not be stored in project config"),
             }
         }
 
@@ -826,7 +818,8 @@ impl Game {
             win_border_size: 0.0,
             win_frame_height: 0.0,
             win_padding: imgui::Vec2(0.0, 0.0),
-        }.run(&mut context);
+        }
+        .run(&mut context);
     }
 }
 
@@ -865,7 +858,7 @@ impl UIState<'_> {
                     if self.startup_successful {
                         self.err_string = None;
                     } else {
-                        break 'gui
+                        break 'gui;
                     }
                 }
             }
@@ -898,7 +891,8 @@ impl UIState<'_> {
             let time = self.clean_state_instant.unwrap().elapsed().as_millis();
             if time < GRID_CHANGE_TIME as _ {
                 self.grid_colour = self.grid_colour.lerp(target_grid_colour, time as f64 / GRID_CHANGE_TIME as f64);
-                self.grid_colour_background = self.grid_colour_background.lerp(target_grid_background, time as f64 / GRID_CHANGE_TIME as f64);
+                self.grid_colour_background =
+                    self.grid_colour_background.lerp(target_grid_background, time as f64 / GRID_CHANGE_TIME as f64);
             } else {
                 self.clean_state_instant = None;
                 self.grid_colour = target_grid_colour;
@@ -970,7 +964,11 @@ impl UIState<'_> {
             }
         }
 
-        self.game.renderer.finish(self.config.ui_width.into(), self.config.ui_height.into(), self.grid_colour_background);
+        self.game.renderer.finish(
+            self.config.ui_width.into(),
+            self.config.ui_height.into(),
+            self.grid_colour_background,
+        );
     }
 
     /// Pulls new window events from operating system and updates config, imgui and renderer accordingly.
@@ -981,7 +979,8 @@ impl UIState<'_> {
             match event {
                 ev @ Event::KeyboardDown(key) | ev @ Event::KeyboardUp(key) => {
                     let state = matches!(ev, Event::KeyboardDown(_));
-                    if state { // Only cancel mouse selection when pressing down a key
+                    if state {
+                        // Only cancel mouse selection when pressing down a key
                         if key == Key::Escape {
                             if self.setting_mouse_pos {
                                 // Unset new mouse position if we pressed escape
@@ -1032,7 +1031,7 @@ impl UIState<'_> {
                 Event::Maximise(b) => {
                     self.config.ui_maximised = b;
                     self.clear_context_menu = true;
-                }
+                },
                 Event::CloseRequest => return false,
                 _ => (),
             }
@@ -1043,12 +1042,11 @@ impl UIState<'_> {
     /// Updates all imgui windows (including the context menus and menu bar)
     /// Returns false if the application should exit
     fn update_windows(&mut self, frame: &mut imgui::Frame, fps_text: &String) -> bool {
-
         // Update menu bar
         if !self.show_menu_bar(frame) {
             return false;
         }
-        
+
         self.keybindings.update_disable_bindings();
 
         let mut display_info = DisplayInformation {
@@ -1159,9 +1157,9 @@ impl UIState<'_> {
 impl Colour {
     fn lerp(&self, target: Colour, amount: f64) -> Colour {
         Colour {
-            r: (target.r-self.r)*amount+self.r,
-            g: (target.g-self.g)*amount+self.g,
-            b: (target.b-self.b)*amount+self.b,
+            r: (target.r - self.r) * amount + self.r,
+            g: (target.g - self.g) * amount + self.g,
+            b: (target.b - self.b) * amount + self.b,
         }
     }
 }
