@@ -1534,7 +1534,7 @@ impl Game {
         } else {
             return Err(gml::Error::NonexistentAsset(asset::Type::Room, room_id).into());
         };
-
+        let mut current_frame_time: u32 = 0;
         // Update this early so the other events run
         self.scene_change = None;
 
@@ -1765,6 +1765,24 @@ impl Game {
                         transition(self, trans_surf_old, trans_surf_new, width as _, height as _, progress)?;
                         if self.play_type != PlayType::Record {
                             self.renderer.present(width, height, self.scaling);
+                            while current_frame_time < 50 {
+                                let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                                let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                                let pixels = self.renderer.get_pixels(0, 0, w, h);
+                                if self.ffmpeg_dumper.is_some() {
+                                    self.ffmpeg_dumper
+                                        .as_mut()
+                                        .unwrap()
+                                        .stdin
+                                        .as_mut()
+                                        .expect("Failed to open stdin")
+                                        .write_all(&pixels)
+                                        .unwrap();
+                                }
+                                current_frame_time += 120
+                            }
+                            current_frame_time -= 50;
+
                             let diff = current_time.elapsed();
                             if let Some(dur) = FRAME_TIME.checked_sub(diff) {
                                 gml::datetime::sleep(dur);
