@@ -1534,7 +1534,7 @@ impl Game {
         } else {
             return Err(gml::Error::NonexistentAsset(asset::Type::Room, room_id).into());
         };
-        let mut current_frame_time: u32 = 0;
+
         // Update this early so the other events run
         self.scene_change = None;
 
@@ -1750,6 +1750,7 @@ impl Game {
                     const FRAME_TIME: Duration = Duration::from_nanos(1_000_000_000u64 / 120);
                     let mut current_time = Instant::now();
                     let perspective = self.renderer.get_perspective();
+                    let mut current_frame_time: u32 = 119;
                     for i in 0..self.transition_steps + 1 {
                         let progress = Real::from(i) / self.transition_steps.into();
                         if self.surface_fix {
