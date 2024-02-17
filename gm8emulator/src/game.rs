@@ -2379,9 +2379,9 @@ impl Game {
                         stdin.write_all(&pixels).unwrap();
                     }
                     current_frame_time += self.room.speed;
+                    self.audio.dump_audio();
                 }
                 current_frame_time -= 50;
-                self.audio.dump_audio();
             }
 
             match self.scene_change {
