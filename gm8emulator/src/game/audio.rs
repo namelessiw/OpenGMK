@@ -274,6 +274,7 @@ impl AudioManager {
         if self.do_output {
             let _ = self.mixer_handle.stop_all();
         }
+        self.stop_audio_dump()
     }
 
     pub fn set_global_volume(&self, vol: f64) {

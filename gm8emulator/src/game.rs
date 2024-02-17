@@ -1780,9 +1780,10 @@ impl Game {
                                         .write_all(&pixels)
                                         .unwrap();
                                 }
-                                current_frame_time += 120
+                                current_frame_time += 120;
+                                self.audio.dump_audio();
                             }
-                            self.audio.dump_audio();
+
                             current_frame_time -= 50;
 
                             let diff = current_time.elapsed();
