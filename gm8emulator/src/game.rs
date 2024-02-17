@@ -1309,7 +1309,7 @@ impl Game {
             open_ini: None,
             open_file: None,
             file_finder: None,
-            spoofed_time_nanos: None,
+            spoofed_time_nanos: Some(0),
             frame_limiter,
             frame_limit_at,
             ffmpeg_dumper,
@@ -1782,6 +1782,7 @@ impl Game {
                                 }
                                 current_frame_time += 120
                             }
+                            self.audio.dump_audio();
                             current_frame_time -= 50;
 
                             let diff = current_time.elapsed();
@@ -2379,6 +2380,7 @@ impl Game {
                     current_frame_time += self.room.speed;
                 }
                 current_frame_time -= 50;
+                self.audio.dump_audio();
             }
 
             match self.scene_change {

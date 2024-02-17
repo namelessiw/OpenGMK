@@ -1,8 +1,5 @@
 use super::SoundParams;
 
-use std::io::Write;
-
-use std::process::{self, Stdio};
 use std::{
     process::Child,
     sync::{
@@ -25,7 +22,6 @@ pub struct Mixer {
     global_volume: Arc<AtomicU32>,
     input_buffer: Vec<Sample>,
     receiver: Receiver<Command>,
-    audio_dumper: Option<Child>,
 }
 
 enum Command {
@@ -48,31 +44,9 @@ pub enum Error {
 }
 
 impl Mixer {
-    pub fn new(
-        sample_rate: SampleRate,
-        channels: ChannelCount,
-        global_volume: Arc<AtomicU32>,
-        dump_audio: bool,
-    ) -> (Self, MixerHandle) {
+    pub fn new(sample_rate: SampleRate, channels: ChannelCount, global_volume: Arc<AtomicU32>) -> (Self, MixerHandle) {
         let (sender, receiver) = mpsc::channel();
-        let audio_dumper = dump_audio.then(|| {
-            process::Command::new("ffmpeg")
-                .arg("-y")
-                .arg("-f")
-                .arg("f32le")
-                .arg("-ar")
-                .arg("48k")
-                .arg("-ac")
-                .arg("2")
-                .arg("-i")
-                .arg("-")
-                .arg("dump.wav")
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("Failed to open FFmpeg stdin")
-        });
+
         (
             Self {
                 channels,
@@ -82,7 +56,6 @@ impl Mixer {
                 global_volume,
                 input_buffer: Vec::new(),
                 receiver,
-                audio_dumper,
             },
             MixerHandle(sender),
         )
@@ -107,9 +80,6 @@ impl Source for Mixer {
                 Command::StopAll => {
                     self.sources.clear();
                     self.exclusive_source = None;
-                    if self.audio_dumper.is_some() {
-                        self.audio_dumper.as_mut().unwrap().wait().unwrap();
-                    }
                 },
             }
         }
@@ -138,13 +108,6 @@ impl Source for Mixer {
 
             count == input_buffer.len()
         });
-        if self.audio_dumper.is_some() {
-            let stdin = self.audio_dumper.as_mut().unwrap().stdin.as_mut().expect("Failed to open stdin");
-            unsafe {
-                let samples = std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 4);
-                stdin.write_all(samples).unwrap();
-            }
-        }
 
         buffer.len()
     }

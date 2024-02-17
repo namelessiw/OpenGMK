@@ -1,9 +1,12 @@
 mod mixer;
 mod mp3;
-
 use serde::{Deserialize, Serialize};
+use std::io::Write;
+use std::process::{self, Child, Stdio};
 use std::{
     collections::HashMap,
+    num::NonZeroU16,
+    num::NonZeroU32,
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -14,7 +17,7 @@ use udon::{
     rechanneler::Rechanneler,
     resampler::Resampler,
     session::{Api, Session},
-    source::{ChannelCount, SampleRate, Source},
+    source::{ChannelCount, Sample, SampleRate, Source},
     wav::WavPlayer,
 };
 
@@ -44,6 +47,7 @@ pub struct SoundParams {
 }
 
 pub struct AudioManager {
+    mixer: Option<Mixer>,
     mixer_handle: MixerHandle,
     mixer_channel_count: ChannelCount,
     mixer_sample_rate: SampleRate,
@@ -51,6 +55,7 @@ pub struct AudioManager {
     global_volume: Arc<AtomicU32>,
     end_times: HashMap<i32, Option<u128>>,
     multimedia_end: Option<(i32, Option<u128>)>,
+    audio_dumper: Option<Child>,
 }
 
 impl AudioManager {
@@ -62,14 +67,49 @@ impl AudioManager {
         let channel_count = device.channel_count();
         let global_volume = Arc::new(AtomicU32::from(1.0f32.to_bits()));
 
-        let (mixer, mixer_handle) = Mixer::new(sample_rate, channel_count, global_volume.clone(), do_dump_audio);
-
-        std::thread::spawn(move || {
-            let stream = session.open_output_stream(device).unwrap();
-            stream.play(mixer).unwrap();
+        let (mixer, mixer_handle) = match do_dump_audio {
+            true => Mixer::new(NonZeroU32::new(48000).unwrap(), NonZeroU16::new(2).unwrap(), global_volume.clone()),
+            false => Mixer::new(sample_rate, channel_count, global_volume.clone()),
+        };
+        let audio_dumper = do_dump_audio.then(|| {
+            process::Command::new("ffmpeg")
+                .arg("-y")
+                .arg("-f")
+                .arg("f32le")
+                .arg("-ar")
+                .arg("48k")
+                .arg("-ac")
+                .arg("2")
+                .arg("-i")
+                .arg("-")
+                .arg("dump.wav")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("Failed to open FFmpeg stdin")
         });
+        if do_dump_audio {
+            return Self {
+                mixer: Some(mixer),
+                mixer_handle,
+                mixer_channel_count: channel_count,
+                mixer_sample_rate: sample_rate,
+                do_output,
+                global_volume,
+                end_times: HashMap::new(),
+                multimedia_end: None,
+                audio_dumper: audio_dumper,
+            };
+        } else {
+            std::thread::spawn(move || {
+                let stream = session.open_output_stream(device).unwrap();
+                stream.play(mixer).unwrap();
+            });
+        }
 
         Self {
+            mixer: None,
             mixer_handle,
             mixer_channel_count: channel_count,
             mixer_sample_rate: sample_rate,
@@ -77,9 +117,30 @@ impl AudioManager {
             global_volume,
             end_times: HashMap::new(),
             multimedia_end: None,
+            audio_dumper: audio_dumper,
+        }
+    }
+    pub fn dump_audio(&mut self) {
+        match &mut self.mixer {
+            Some(mixer) => {
+                const AUDIO_SAMPLES_PER_FRAME: usize = 48000 / 50 * 2;
+                let mut audio_output: [Sample; AUDIO_SAMPLES_PER_FRAME] = [0.0; AUDIO_SAMPLES_PER_FRAME];
+                mixer.write_samples(&mut audio_output);
+
+                let stdin = self.audio_dumper.as_mut().unwrap().stdin.as_mut().expect("Failed to open stdin");
+                unsafe {
+                    let samples =
+                        std::slice::from_raw_parts(audio_output.as_ptr() as *const u8, audio_output.len() * 4);
+                    stdin.write_all(samples).unwrap();
+                }
+            },
+            None => (),
         }
     }
 
+    pub fn stop_audio_dump(&mut self) {
+        self.audio_dumper.as_mut().map(|d| d.wait());
+    }
     pub fn add_mp3(&mut self, file: Box<[u8]>, sound_id: i32) -> Option<Mp3Handle> {
         Mp3Player::new(file).map(|player| Mp3Handle { player, id: sound_id }).ok()
     }
