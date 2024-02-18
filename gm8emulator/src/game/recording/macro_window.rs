@@ -242,31 +242,15 @@ impl MacroWindow {
                         unexpected_token!();
                     }
                     match token.as_str() {
-                        "(R)" => {
-                            state_change =
-                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillCactus))
-                        },
-                        "(RP)" => {
-                            state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillDouble))
-                        },
-                        "(RPR)" => {
-                            state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillTriple))
-                        },
-                        "(P)" => {
-                            state_change =
-                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillPress))
-                        },
-                        "(PR)" => {
-                            state_change =
-                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillDouble))
-                        },
-                        "(PRP)" => {
-                            state_change =
-                                Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillTriple))
-                        },
-                        _ => {
-                            unexpected_token!("Unknown modifier token '{}'")
-                        },
+                        "(N)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::Neutral)),
+                        "(R)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillCactus)),
+                        "(RP)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillDouble)),
+                        "(RPR)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::HeldWillTriple)),
+                        "(H)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::Held)),
+                        "(P)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillPress)),
+                        "(PR)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillDouble)),
+                        "(PRP)" => state_change = Some(StateChange::ChangeTo(last_keycode.unwrap(), KeyState::NeutralWillTriple)),
+                        _ => { unexpected_token!("Unknown modifier token '{}'") },
                     }
                 },
                 TokenType::KeySeparator => {
