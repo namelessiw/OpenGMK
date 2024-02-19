@@ -2321,7 +2321,7 @@ impl Game {
         }
 
         let mut time_now = Instant::now();
-        loop {
+        let output_bin_result = loop {
             self.window.poll_events();
             self.input.mouse_step();
 
@@ -2342,19 +2342,19 @@ impl Game {
                         .save_to_file(bin, &mut savestate::Buffer::new())
                     {
                         Ok(()) => {
-                            if self.ffmpeg_dumper.is_some() {
-                                self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
-                            }
                             break Ok(());
                         },
                         Err(e) => break Err(format!("Error saving to {:?}: {:?}", output_bin, e).into()),
                     }
                 }
+                if self.ffmpeg_dumper.is_some() {
+                    break Ok(());
+                }
             }
 
             if let Some(frame) = replay.get_frame(frame_count) {
                 if !self.stored_events.is_empty() {
-                    return Err(format!(
+                    break Err(format!(
                         "ERROR: {} stored events remaining at beginning of frame {}; aborting",
                         self.stored_events.len(),
                         frame_count,
@@ -2423,7 +2423,11 @@ impl Game {
             }
 
             frame_count += 1;
+        };
+        if self.ffmpeg_dumper.is_some() {
+            self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
         }
+        output_bin_result
     }
 
     // Gets the mouse position in room coordinates
