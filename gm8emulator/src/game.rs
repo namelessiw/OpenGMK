@@ -2321,7 +2321,7 @@ impl Game {
         }
 
         let mut time_now = Instant::now();
-        let output_bin_result = loop {
+        return loop {
             self.window.poll_events();
             self.input.mouse_step();
 
@@ -2348,6 +2348,9 @@ impl Game {
                     }
                 }
                 if self.ffmpeg_dumper.is_some() {
+                    if self.ffmpeg_dumper.is_some() {
+                        self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
+                    }
                     break Ok(());
                 }
             }
@@ -2424,10 +2427,6 @@ impl Game {
 
             frame_count += 1;
         };
-        if self.ffmpeg_dumper.is_some() {
-            self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
-        }
-        output_bin_result
     }
 
     // Gets the mouse position in room coordinates
