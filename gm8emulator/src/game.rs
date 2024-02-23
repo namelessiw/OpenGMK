@@ -2347,10 +2347,8 @@ impl Game {
                         Err(e) => break Err(format!("Error saving to {:?}: {:?}", output_bin, e).into()),
                     }
                 }
-                if self.ffmpeg_dumper.is_some() {
-                    if self.ffmpeg_dumper.is_some() {
-                        self.ffmpeg_dumper.unwrap().wait_with_output().unwrap();
-                    }
+                if let Some(dumper) = self.ffmpeg_dumper {
+                    dumper.wait_with_output().expect("ffmpeg dumper should close");
                     break Ok(());
                 }
             }
