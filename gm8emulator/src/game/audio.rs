@@ -82,7 +82,7 @@ impl AudioManager {
                 .arg("2")
                 .arg("-i")
                 .arg("-")
-                .arg("dump.wav")
+                .arg("dump.flac")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())

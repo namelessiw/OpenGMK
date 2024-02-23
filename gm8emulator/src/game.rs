@@ -2349,6 +2349,24 @@ impl Game {
                 }
                 if let Some(dumper) = self.ffmpeg_dumper {
                     dumper.wait_with_output().expect("ffmpeg dumper should close");
+                    //combine audio and video dump into one file
+                    Command::new("ffmpeg")
+                        .arg("-y")
+                        .arg("-i")
+                        .arg("dump.flac")
+                        .arg("-i")
+                        .arg("dump.mkv")
+                        .arg("-c")
+                        .arg("copy")
+                        .arg("--")
+                        .arg("tas recording.mkv")
+                        .stdin(Stdio::piped())
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::inherit())
+                        .spawn()
+                        .expect("Failed to open FFmpeg stdin")
+                        .wait_with_output()
+                        .expect("ffmpeg dumper should close");
                     break Ok(());
                 }
             }
