@@ -2348,7 +2348,7 @@ impl Game {
                     }
                 }
                 if let Some(dumper) = self.ffmpeg_dumper {
-                    dumper.wait_with_output().expect("ffmpeg dumper should close");
+                    dumper.wait_with_output().expect("video dumper should close");
                     //combine audio and video dump into one file
                     Command::new("ffmpeg")
                         .arg("-y")

@@ -139,7 +139,9 @@ impl AudioManager {
     }
 
     pub fn stop_audio_dump(&mut self) {
-        self.audio_dumper.as_mut().map(|d| d.wait());
+        if let Some(dumper) = self.audio_dumper.take() {
+            dumper.wait_with_output().expect("audio dumper should close");
+        }
     }
     pub fn add_mp3(&mut self, file: Box<[u8]>, sound_id: i32) -> Option<Mp3Handle> {
         Mp3Player::new(file).map(|player| Mp3Handle { player, id: sound_id }).ok()
