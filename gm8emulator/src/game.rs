@@ -2349,13 +2349,14 @@ impl Game {
                 }
                 if let Some(dumper) = self.ffmpeg_dumper {
                     dumper.wait_with_output().expect("video dumper should close");
+                    self.audio.stop_audio_dump();
                     //combine audio and video dump into one file
                     Command::new("ffmpeg")
                         .arg("-y")
                         .arg("-i")
-                        .arg("dump.flac")
-                        .arg("-i")
                         .arg("dump.mkv")
+                        .arg("-i")
+                        .arg("dump.flac")
                         .arg("-c")
                         .arg("copy")
                         .arg("--")
