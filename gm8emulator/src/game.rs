@@ -2389,7 +2389,6 @@ impl Game {
             if self.ffmpeg_dumper.is_some() {
                 while current_frame_time < 50 {
                     if self.scene_change.is_none() && self.play_type != PlayType::Record {
-                        self.renderer.present(self.window_inner_size.0, self.window_inner_size.1, self.scaling);
                         let w: i32 = self.window_inner_size.0.try_into().unwrap();
                         let h: i32 = self.window_inner_size.1.try_into().unwrap();
                         let pixels = self.renderer.get_pixels(0, 0, w, h);
