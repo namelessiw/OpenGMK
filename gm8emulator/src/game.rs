@@ -1766,25 +1766,27 @@ impl Game {
                         transition(self, trans_surf_old, trans_surf_new, width as _, height as _, progress)?;
                         if self.play_type != PlayType::Record {
                             self.renderer.present(width, height, self.scaling);
-                            while current_frame_time < 50 {
-                                let w: i32 = self.window_inner_size.0.try_into().unwrap();
-                                let h: i32 = self.window_inner_size.1.try_into().unwrap();
-                                let pixels = self.renderer.get_pixels(0, 0, w, h);
-                                if self.ffmpeg_dumper.is_some() {
-                                    self.ffmpeg_dumper
-                                        .as_mut()
-                                        .unwrap()
-                                        .stdin
-                                        .as_mut()
-                                        .expect("Failed to open stdin")
-                                        .write_all(&pixels)
-                                        .unwrap();
-                                }
-                                current_frame_time += 120;
-                                self.audio.dump_audio();
-                            }
+                            if self.ffmpeg_dumper.is_some() {
+                                while current_frame_time < 50 {
+                                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                                    let pixels = self.renderer.get_pixels(0, 0, w, h);
 
-                            current_frame_time -= 50;
+                                        self.ffmpeg_dumper
+                                            .as_mut()
+                                            .unwrap()
+                                            .stdin
+                                            .as_mut()
+                                            .expect("Failed to open stdin")
+                                            .write_all(&pixels)
+                                            .unwrap();
+                                    
+                                    current_frame_time += 120;
+                                    self.audio.dump_audio();
+                                }
+
+                                current_frame_time -= 50;
+                            }
 
                             let diff = current_time.elapsed();
                             if let Some(dur) = FRAME_TIME.checked_sub(diff) {
