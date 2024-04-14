@@ -1,23 +1,22 @@
 use crate::{
-    imgui,
     game::{
-        Game,
-        SceneChange,
         recording::{
-            KeyState,
-            InputMode,
             keybinds::Binding,
-            window::{Window, DisplayInformation},
+            window::{DisplayInformation, Window},
+            InputMode, KeyState,
         },
         replay::{self, Frame, FrameRng},
+        Game, SceneChange,
     },
-    types::Colour
+    imgui,
+    types::Colour,
 };
 use std::time::Duration;
 
 pub struct ControlWindow {
     seed_text: String,
     rerecord_text: String,
+    count: u32,
 }
 
 impl Window for ControlWindow {
@@ -51,8 +50,7 @@ impl Window for ControlWindow {
             self.advance_frame(info);
         }
 
-        if (info.frame.button("Quick Save", imgui::Vec2(165.0, 20.0), None)
-            || info.keybind_pressed(Binding::Quicksave))
+        if (info.frame.button("Quick Save", imgui::Vec2(165.0, 20.0), None) || info.keybind_pressed(Binding::Quicksave))
             && *info.game_running
             && info.err_string.is_none()
         {
@@ -105,7 +103,7 @@ impl Window for ControlWindow {
         } else {
             "Full Keyboard###KeyboardLayout"
         };
-        if info.frame.button(keyboard_label, imgui::Vec2(165.0, 20.0), None) 
+        if info.frame.button(keyboard_label, imgui::Vec2(165.0, 20.0), None)
             || info.keybind_pressed(Binding::ToggleKeyboard)
         {
             info.config.full_keyboard = !info.config.full_keyboard;
@@ -116,8 +114,7 @@ impl Window for ControlWindow {
             InputMode::Direct => "Switch to mouse input###InputMethod",
             InputMode::Mouse => "Switch to direct input###InputMethod",
         };
-        if info.frame.button(input_label, imgui::Vec2(165.0, 20.0), None)
-            || info.keybind_pressed(Binding::ToggleDirect)
+        if info.frame.button(input_label, imgui::Vec2(165.0, 20.0), None) || info.keybind_pressed(Binding::ToggleDirect)
         {
             info.config.input_mode = match info.config.input_mode {
                 InputMode::Mouse => InputMode::Direct,
@@ -129,7 +126,7 @@ impl Window for ControlWindow {
             true => "Switch to Read/Write###IsReadOnly",
             false => "Switch to Read-Only###IsReadOnly",
         };
-        if info.frame.button(read_only_label, imgui::Vec2(165.0, 20.0), None) 
+        if info.frame.button(read_only_label, imgui::Vec2(165.0, 20.0), None)
             || info.keybind_pressed(Binding::ToggleReadOnly)
         {
             info.config.is_read_only = !info.config.is_read_only;
@@ -140,8 +137,7 @@ impl Window for ControlWindow {
             true => "Set Mouse: textbox###mouse_set_label",
             false => "Set mouse: clicking###mouse_set_label",
         };
-        if info.frame.button(mouse_set_label, imgui::Vec2(165.0, 20.0), None) 
-        {
+        if info.frame.button(mouse_set_label, imgui::Vec2(165.0, 20.0), None) {
             info.config.set_mouse_using_textbox = !info.config.set_mouse_using_textbox;
             info.config.save();
         }
@@ -165,7 +161,9 @@ impl Window for ControlWindow {
         info.frame.end();
     }
 
-    fn is_open(&self) -> bool { true }
+    fn is_open(&self) -> bool {
+        true
+    }
 
     fn show_context_menu(&mut self, info: &mut DisplayInformation) -> bool {
         let mut context_menu_open = true;
@@ -187,6 +185,14 @@ impl Window for ControlWindow {
         } else if info.frame.menu_item("+50 RNG calls") {
             count = Some(50);
             context_menu_open = false;
+        } else if info.frame.menu_item("+n RNG calls") {
+            count = Some(self.count);
+            self.count += 1;
+            context_menu_open = false;
+        } else if info.frame.menu_item("reset count") {
+            self.count = 1;
+            count = None;
+            context_menu_open = false;
         } else {
             count = None;
         }
@@ -205,15 +211,12 @@ impl Window for ControlWindow {
         }
 
         context_menu_open
-     }
+    }
 }
 
 impl ControlWindow {
     pub fn new() -> Self {
-        ControlWindow {
-            rerecord_text: format!("Re-Records: {}", 0),
-            seed_text: format!("Seed: {}", 0),
-        }
+        ControlWindow { rerecord_text: format!("Re-Records: {}", 0), seed_text: format!("Seed: {}", 0), count: 1 }
     }
 
     fn update_texts(&mut self, info: &mut DisplayInformation) {
@@ -232,10 +235,7 @@ impl ControlWindow {
         let mut current_frame: Frame;
 
         if info.config.is_read_only && matches!(info.replay.get_frame(info.config.current_frame), Some(_)) {
-            current_frame = info.replay
-                .get_frame(info.config.current_frame)
-                .unwrap()
-                .clone();
+            current_frame = info.replay.get_frame(info.config.current_frame).unwrap().clone();
             frame = &mut current_frame;
         } else {
             if info.config.is_read_only == true {
@@ -312,11 +312,19 @@ impl ControlWindow {
             info.config.ui_width.into(),
             info.config.ui_height.into(),
             0.0,
-            0, 0,
+            0,
+            0,
             info.config.ui_width.into(),
-            info.config.ui_height.into()
+            info.config.ui_height.into(),
         );
-        info.game.renderer.clear_view(if *info.clean_state { crate::game::recording::CLEAR_COLOUR_GOOD } else { crate::game::recording::CLEAR_COLOUR_BAD }, 1.0);
+        info.game.renderer.clear_view(
+            if *info.clean_state {
+                crate::game::recording::CLEAR_COLOUR_GOOD
+            } else {
+                crate::game::recording::CLEAR_COLOUR_BAD
+            },
+            1.0,
+        );
         *info.renderer_state = info.game.renderer.state();
         info.game.renderer.set_state(info.ui_renderer_state);
         info.clear_context_menu();
@@ -382,7 +390,7 @@ impl ControlWindow {
             0,
             0,
             game.unscaled_width as _,
-            game.unscaled_height as _
+            game.unscaled_height as _,
         );
         game.renderer.draw_stored(0, 0, w, h);
         if let Err(e) = match game.frame() {
