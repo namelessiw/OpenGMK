@@ -1,17 +1,15 @@
 use crate::{
-    imgui,
     game::{
-        Game,
-        SceneChange,
         recording::{
-            KeyState,
-            InputMode,
             keybinds::Binding,
-            window::{Window, DisplayInformation},
+            window::{DisplayInformation, Window},
+            InputMode, KeyState,
         },
         replay::{self, Frame, FrameRng},
+        Game, SceneChange,
     },
-    types::Colour
+    imgui,
+    types::Colour,
 };
 use std::time::Duration;
 
@@ -21,7 +19,7 @@ pub struct ControlWindow {
     seed_text: String,
     rerecord_text: String,
     rng_select: RNGSelect,
-    seed_base: (i32, i32, i32)
+    seed_base: (i32, i32, i32),
 }
 
 impl Window for ControlWindow {
@@ -111,7 +109,7 @@ impl Window for ControlWindow {
         } else {
             "Full Keyboard###KeyboardLayout"
         };
-        if info.frame.button(keyboard_label, imgui::Vec2(content_width, 20.0), None) 
+        if info.frame.button(keyboard_label, imgui::Vec2(content_width, 20.0), None)
             || info.keybind_pressed(Binding::ToggleKeyboard)
         {
             info.config.full_keyboard = !info.config.full_keyboard;
@@ -131,14 +129,11 @@ impl Window for ControlWindow {
             }
         }
 
-        let read_only_label = match info.config.is_read_only {
-            true => "Switch to Read/Write###IsReadOnly",
-            false => "Switch to Read-Only###IsReadOnly",
-        };
-        if info.frame.button(read_only_label, imgui::Vec2(content_width, 20.0), None) 
+        let read_only_label = "Don't truncate replay on reload or frame advance ###IsReadOnly";
+
+        if info.frame.checkbox(read_only_label, &mut info.config.is_read_only)
             || info.keybind_pressed(Binding::ToggleReadOnly)
         {
-            info.config.is_read_only = !info.config.is_read_only;
             info.config.save();
         }
 
@@ -146,13 +141,12 @@ impl Window for ControlWindow {
             true => "Set Mouse: textbox###mouse_set_label",
             false => "Set mouse: clicking###mouse_set_label",
         };
-        if info.frame.button(mouse_set_label, imgui::Vec2(content_width, 20.0), None) 
-        {
+        if info.frame.button(mouse_set_label, imgui::Vec2(content_width, 20.0), None) {
             info.config.set_mouse_using_textbox = !info.config.set_mouse_using_textbox;
             info.config.save();
         }
 
-        if info.frame.button(">", imgui::Vec2(18.0, 18.0), Some(imgui::Vec2(content_width-18.0, 138.0)))
+        if info.frame.button(">", imgui::Vec2(18.0, 18.0), Some(imgui::Vec2(content_width - 18.0, 138.0)))
             || info.keybind_pressed(Binding::NextRand)
         {
             if let Some(rand) = &mut info.new_rand {
@@ -169,7 +163,9 @@ impl Window for ControlWindow {
         info.frame.end();
     }
 
-    fn is_open(&self) -> bool { true }
+    fn is_open(&self) -> bool {
+        true
+    }
 
     fn show_context_menu(&mut self, info: &mut DisplayInformation) -> bool {
         let mut context_menu_open = true;
@@ -181,16 +177,16 @@ impl Window for ControlWindow {
             new_rand = Some(None);
             context_menu_open = false;
         } else if info.frame.menu_item("+1 RNG call") {
-            new_rand = Some(Some(FrameRng::Increment(current_increment+1)));
+            new_rand = Some(Some(FrameRng::Increment(current_increment + 1)));
             context_menu_open = false;
         } else if info.frame.menu_item("+5 RNG calls") {
-            new_rand = Some(Some(FrameRng::Increment(current_increment+5)));
+            new_rand = Some(Some(FrameRng::Increment(current_increment + 5)));
             context_menu_open = false;
         } else if info.frame.menu_item("+10 RNG calls") {
-            new_rand = Some(Some(FrameRng::Increment(current_increment+10)));
+            new_rand = Some(Some(FrameRng::Increment(current_increment + 10)));
             context_menu_open = false;
         } else if info.frame.menu_item("+50 RNG calls") {
-            new_rand = Some(Some(FrameRng::Increment(current_increment+50)));
+            new_rand = Some(Some(FrameRng::Increment(current_increment + 50)));
             context_menu_open = false;
         } else if info.frame.menu_item("Pick RNG") {
             info.request_modal(&mut self.rng_select);
@@ -248,7 +244,7 @@ impl ControlWindow {
                         *info.new_rand = None; // Unset new seed if the game's seed is already set to it
                     }
                     format!("Seed: {}", new_seed)
-                }
+                },
             }
         } else {
             self.seed_text = format!("Seed: {}", info.game.rand.seed());
@@ -262,10 +258,7 @@ impl ControlWindow {
         let mut current_frame: Frame;
 
         if info.config.is_read_only && matches!(info.replay.get_frame(info.config.current_frame), Some(_)) {
-            current_frame = info.replay
-                .get_frame(info.config.current_frame)
-                .unwrap()
-                .clone();
+            current_frame = info.replay.get_frame(info.config.current_frame).unwrap().clone();
             frame = &mut current_frame;
         } else {
             if info.config.is_read_only == true {
@@ -342,11 +335,19 @@ impl ControlWindow {
             info.config.ui_width.into(),
             info.config.ui_height.into(),
             0.0,
-            0, 0,
+            0,
+            0,
             info.config.ui_width.into(),
-            info.config.ui_height.into()
+            info.config.ui_height.into(),
         );
-        info.game.renderer.clear_view(if *info.clean_state { crate::game::recording::CLEAR_COLOUR_GOOD } else { crate::game::recording::CLEAR_COLOUR_BAD }, 1.0);
+        info.game.renderer.clear_view(
+            if *info.clean_state {
+                crate::game::recording::CLEAR_COLOUR_GOOD
+            } else {
+                crate::game::recording::CLEAR_COLOUR_BAD
+            },
+            1.0,
+        );
         *info.renderer_state = info.game.renderer.state();
         info.game.renderer.set_state(info.ui_renderer_state);
         info.clear_context_menu();
@@ -412,7 +413,7 @@ impl ControlWindow {
             0,
             0,
             game.unscaled_width as _,
-            game.unscaled_height as _
+            game.unscaled_height as _,
         );
         game.renderer.draw_stored(0, 0, w, h);
         if let Err(e) = match game.frame() {
