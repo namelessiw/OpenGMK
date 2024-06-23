@@ -2196,7 +2196,6 @@ impl Game {
             self.frame()?;
             self.dump_audiovideo_frame(&mut current_frame_time, self.room.speed);
             if let Some(SceneChange::End) = self.scene_change {
-                println!("game ending");
                 if let Some(dumper) = self.ffmpeg_dumper.take() {
                     self.stop_audiovisual_dump(dumper);
                 }
