@@ -1766,27 +1766,7 @@ impl Game {
                         transition(self, trans_surf_old, trans_surf_new, width as _, height as _, progress)?;
                         if self.play_type != PlayType::Record {
                             self.renderer.present(width, height, self.scaling);
-                            if self.ffmpeg_dumper.is_some() {
-                                while current_frame_time < 50 {
-                                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
-                                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
-                                    let pixels = self.renderer.get_pixels(0, 0, w, h);
-
-                                        self.ffmpeg_dumper
-                                            .as_mut()
-                                            .unwrap()
-                                            .stdin
-                                            .as_mut()
-                                            .expect("Failed to open stdin")
-                                            .write_all(&pixels)
-                                            .unwrap();
-                                    
-                                    current_frame_time += 120;
-                                    self.audio.dump_audio();
-                                }
-
-                                current_frame_time -= 50;
-                            }
+                            self.dump_audiovideo_frame(&mut current_frame_time, 120);
 
                             let diff = current_time.elapsed();
                             if let Some(dur) = FRAME_TIME.checked_sub(diff) {
@@ -2209,10 +2189,18 @@ impl Game {
 
         let mut time_now = Instant::now();
         let mut time_last = time_now;
+        let mut current_frame_time: u32 = 0;
         loop {
             self.process_window_events();
 
             self.frame()?;
+            self.dump_audiovideo_frame(&mut current_frame_time, self.room.speed);
+            if let Some(SceneChange::End) = self.scene_change {
+                println!("game ending");
+                if let Some(dumper) = self.ffmpeg_dumper.take() {
+                    self.stop_audiovisual_dump(dumper);
+                }
+            }
             handle_scene_change!(self);
 
             // Exit if the window was closed by the user, such as by pressing 'X'
@@ -2242,6 +2230,25 @@ impl Game {
             } else {
                 time_now = Instant::now();
             }
+        }
+    }
+
+    fn dump_audiovideo_frame(&mut self, current_frame_time: &mut u32, game_speed: u32) {
+        if let Some(ffmpeg_dumper) = self.ffmpeg_dumper.as_mut() {
+            while *current_frame_time < 50 {
+                if self.scene_change.is_none() {
+                    let w: i32 = self.window_inner_size.0.try_into().unwrap();
+                    let h: i32 = self.window_inner_size.1.try_into().unwrap();
+                    let pixels = self.renderer.get_pixels(0, 0, w, h);
+
+                    let stdin = ffmpeg_dumper.stdin.as_mut().expect("Failed to open stdin");
+
+                    stdin.write_all(&pixels).unwrap();
+                }
+                *current_frame_time += game_speed;
+                self.audio.dump_audio();
+            }
+            *current_frame_time -= 50;
         }
     }
 
@@ -2349,27 +2356,8 @@ impl Game {
                         Err(e) => break Err(format!("Error saving to {:?}: {:?}", output_bin, e).into()),
                     }
                 }
-                if let Some(dumper) = self.ffmpeg_dumper {
-                    dumper.wait_with_output().expect("video dumper should close");
-                    self.audio.stop_audio_dump();
-                    //combine audio and video dump into one file
-                    Command::new("ffmpeg")
-                        .arg("-y")
-                        .arg("-i")
-                        .arg("dump.mkv")
-                        .arg("-i")
-                        .arg("dump.flac")
-                        .arg("-c")
-                        .arg("copy")
-                        .arg("--")
-                        .arg("tas recording.mkv")
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::inherit())
-                        .spawn()
-                        .expect("Failed to open FFmpeg stdin")
-                        .wait_with_output()
-                        .expect("ffmpeg dumper should close");
+                if let Some(dumper) = self.ffmpeg_dumper.take() {
+                    self.stop_audiovisual_dump(dumper);
                     break Ok(());
                 }
             }
@@ -2388,22 +2376,7 @@ impl Game {
             }
 
             self.frame()?;
-            if self.ffmpeg_dumper.is_some() {
-                while current_frame_time < 50 {
-                    if self.scene_change.is_none() && self.play_type != PlayType::Record {
-                        let w: i32 = self.window_inner_size.0.try_into().unwrap();
-                        let h: i32 = self.window_inner_size.1.try_into().unwrap();
-                        let pixels = self.renderer.get_pixels(0, 0, w, h);
-
-                        let stdin = self.ffmpeg_dumper.as_mut().unwrap().stdin.as_mut().expect("Failed to open stdin");
-
-                        stdin.write_all(&pixels).unwrap();
-                    }
-                    current_frame_time += self.room.speed;
-                    self.audio.dump_audio();
-                }
-                current_frame_time -= 50;
-            }
+            self.dump_audiovideo_frame(&mut current_frame_time, self.room.speed);
 
             match self.scene_change {
                 Some(SceneChange::Room(id)) => self.load_room(id)?,
@@ -2447,6 +2420,29 @@ impl Game {
         };
     }
 
+    fn stop_audiovisual_dump(&mut self, dumper: Child) {
+        dumper.wait_with_output().expect("video dumper should close");
+        self.audio.stop_audio_dump();
+        //combine audio and video dump into one file
+        Command::new("ffmpeg")
+            .arg("-y")
+            .arg("-i")
+            .arg("dump.mkv")
+            .arg("-i")
+            .arg("dump.flac")
+            .arg("-c")
+            .arg("copy")
+            .arg("--")
+            .arg("tas recording.mkv")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("Failed to open FFmpeg stdin")
+            .wait_with_output()
+            .expect("ffmpeg dumper should close");
+    }
+
     // Gets the mouse position in room coordinates
     pub fn get_mouse_in_room(&self) -> (i32, i32) {
         let (x, y) = (self.input.mouse_x(), self.input.mouse_y());
@@ -2478,7 +2474,7 @@ impl Game {
     pub fn check_collision(&self, i1: usize, i2: usize) -> bool {
         // Don't check for collision with yourself
         if i1 == i2 {
-            return false
+            return false;
         }
         // Get the sprite masks we're going to use and update instances' bbox vars
         let inst1 = self.room.instance_list.get(i1);
@@ -2502,7 +2498,7 @@ impl Game {
             || inst1.bbox_bottom < inst2.bbox_top
             || inst2.bbox_bottom < inst1.bbox_top
         {
-            return false
+            return false;
         }
 
         // AABB passed - now we do precise pixel checks in the intersection of the two rectangles.
@@ -2553,9 +2549,30 @@ impl Game {
             for intersect_y in intersect_top..=intersect_bottom {
                 for intersect_x in intersect_left..=intersect_right {
                     // check precise collisions for this pixel
-                    if collider1.check_collision_point_precise(intersect_x, intersect_y, x1.to_i32(), y1.to_i32(), sprite1.origin_x, sprite1.origin_y, inst1.image_xscale.get(), inst1.image_yscale.get(), sin1, cos1) &&
-                       collider2.check_collision_point_precise(intersect_x, intersect_y, x2.to_i32(), y2.to_i32(), sprite2.origin_x, sprite2.origin_y, inst2.image_xscale.get(), inst2.image_yscale.get(), sin2, cos2) {
-                        return true
+                    if collider1.check_collision_point_precise(
+                        intersect_x,
+                        intersect_y,
+                        x1.to_i32(),
+                        y1.to_i32(),
+                        sprite1.origin_x,
+                        sprite1.origin_y,
+                        inst1.image_xscale.get(),
+                        inst1.image_yscale.get(),
+                        sin1,
+                        cos1,
+                    ) && collider2.check_collision_point_precise(
+                        intersect_x,
+                        intersect_y,
+                        x2.to_i32(),
+                        y2.to_i32(),
+                        sprite2.origin_x,
+                        sprite2.origin_y,
+                        inst2.image_xscale.get(),
+                        inst2.image_yscale.get(),
+                        sin2,
+                        cos2,
+                    ) {
+                        return true;
                     }
                 }
             }
@@ -2583,7 +2600,7 @@ impl Game {
             || Real::from(inst.bbox_bottom.get()) < y
             || y < Real::from(inst.bbox_top.get())
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
@@ -2600,7 +2617,18 @@ impl Game {
                 None => return false,
             };
             let angle = inst.image_angle.get().to_radians();
-            collider.check_collision_point_precise(x.round().to_i32(), y.round().to_i32(), inst.x.get().round().to_i32(), inst.y.get().round().to_i32(), sprite.origin_x, sprite.origin_y, inst.image_xscale.get(), inst.image_yscale.get(), angle.sin().into_inner(), angle.cos().into_inner())
+            collider.check_collision_point_precise(
+                x.round().to_i32(),
+                y.round().to_i32(),
+                inst.x.get().round().to_i32(),
+                inst.y.get().round().to_i32(),
+                sprite.origin_x,
+                sprite.origin_y,
+                inst.image_xscale.get(),
+                inst.image_yscale.get(),
+                angle.sin().into_inner(),
+                angle.cos().into_inner(),
+            )
         } else {
             false
         }
@@ -2628,12 +2656,12 @@ impl Game {
             || inst.bbox_bottom.get() < rect_top
             || rect_bottom < inst.bbox_top.get()
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2663,8 +2691,19 @@ impl Game {
             // Go through each pixel in the intersect
             for intersect_y in intersect_top..=intersect_bottom {
                 for intersect_x in intersect_left..=intersect_right {
-                    if collider.check_collision_point_precise(intersect_x, intersect_y, inst_x, inst_y, sprite.origin_x, sprite.origin_y, inst.image_xscale.get(), inst.image_yscale.get(), sin, cos) {
-                        return true
+                    if collider.check_collision_point_precise(
+                        intersect_x,
+                        intersect_y,
+                        inst_x,
+                        inst_y,
+                        sprite.origin_x,
+                        sprite.origin_y,
+                        inst.image_xscale.get(),
+                        inst.image_yscale.get(),
+                        sin,
+                        cos,
+                    ) {
+                        return true;
                     }
                 }
             }
@@ -2701,7 +2740,7 @@ impl Game {
             || bbox_bottom + Real::from(1.0) <= rect_top
             || rect_bottom < bbox_top
         {
-            return false
+            return false;
         }
 
         let rect_left = rect_left.round().to_i32();
@@ -2731,13 +2770,13 @@ impl Game {
                 && !point_in_ellipse(bbox_right.into(), bbox_top.into())
                 && !point_in_ellipse(bbox_right.into(), bbox_bottom.into())
             {
-                return false
+                return false;
             }
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         } else if let Some(sprite) = sprite {
             // Get collider
             let collider = match if sprite.per_frame_colliders {
@@ -2766,9 +2805,21 @@ impl Game {
             for intersect_y in intersect_top..=intersect_bottom {
                 for intersect_x in intersect_left..=intersect_right {
                     // Check if point is in ellipse
-                    if point_in_ellipse(intersect_x.into(), intersect_y.into()) &&
-                       collider.check_collision_point_precise(intersect_x, intersect_y, inst_x.to_i32(), inst_y.to_i32(), sprite.origin_x, sprite.origin_y, inst.image_xscale.get(), inst.image_yscale.get(), sin, cos) {
-                        return true
+                    if point_in_ellipse(intersect_x.into(), intersect_y.into())
+                        && collider.check_collision_point_precise(
+                            intersect_x,
+                            intersect_y,
+                            inst_x.to_i32(),
+                            inst_y.to_i32(),
+                            sprite.origin_x,
+                            sprite.origin_y,
+                            inst.image_xscale.get(),
+                            inst.image_yscale.get(),
+                            sin,
+                            cos,
+                        )
+                    {
+                        return true;
                     }
                 }
             }
@@ -2805,7 +2856,7 @@ impl Game {
             || bbox_bottom + Real::from(1.0) <= rect_top
             || rect_bottom < bbox_top
         {
-            return false
+            return false;
         }
 
         // Truncate to the line horizontally
@@ -2824,12 +2875,12 @@ impl Game {
         if (bbox_top > y1 && bbox_top > y2)
             || (y1 >= bbox_bottom + Real::from(1.0) && y2 >= bbox_bottom + Real::from(1.0))
         {
-            return false
+            return false;
         }
 
         // Stop now if precise collision is disabled
         if !precise {
-            return true
+            return true;
         }
 
         // Can't collide if no sprite or no associated collider
@@ -2865,7 +2916,7 @@ impl Game {
             let get_point = |i: i32| {
                 // Avoid dividing by zero
                 if point_count == 1 {
-                    return (Real::from(x1), Real::from(y1))
+                    return (Real::from(x1), Real::from(y1));
                 }
                 if iter_vert {
                     let slope = Real::from(x2 - x1) / Real::from(y2 - y1);
@@ -2895,7 +2946,7 @@ impl Game {
                     && y <= collider.bbox_bottom as i32
                     && collider.data.get((y as usize * collider.width as usize) + x as usize).copied().unwrap_or(false)
                 {
-                    return true
+                    return true;
                 }
             }
             false
@@ -2910,7 +2961,7 @@ impl Game {
         while let Some(target) = iter.next(&self.room.instance_list) {
             if self.room.instance_list.get(target).solid.get() {
                 if self.check_collision(inst, target) {
-                    return Some(target)
+                    return Some(target);
                 }
             }
         }
@@ -2923,7 +2974,7 @@ impl Game {
         while let Some(target) = iter.next(&self.room.instance_list) {
             if inst != target {
                 if self.check_collision(inst, target) {
-                    return Some(target)
+                    return Some(target);
                 }
             }
         }
@@ -2941,7 +2992,7 @@ impl Game {
                     match iter.next(&self.room.instance_list) {
                         Some(handle) => {
                             if pred(handle) {
-                                break Some(handle)
+                                break Some(handle);
                             }
                         },
                         None => break None,
@@ -2955,7 +3006,7 @@ impl Game {
                     match iter.next(&self.room.instance_list) {
                         Some(handle) => {
                             if pred(handle) {
-                                break Some(handle)
+                                break Some(handle);
                             }
                         },
                         None => break None,
@@ -2964,7 +3015,11 @@ impl Game {
             },
             instance_id => {
                 if let Some(handle) = self.room.instance_list.get_by_instid(instance_id) {
-                    if self.room.instance_list.get(handle).is_active() && pred(handle) { Some(handle) } else { None }
+                    if self.room.instance_list.get(handle).is_active() && pred(handle) {
+                        Some(handle)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
